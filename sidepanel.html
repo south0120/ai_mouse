@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>AI辞書</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f6f9;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    /* ヘッダー */
+    .header {
+      background: #fff;
+      padding: 16px 20px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 16px; }
+    .header-actions { display: flex; gap: 8px; }
+    .icon-btn {
+      background: none;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    .icon-btn:hover { background: #f0f0f0; }
+
+    /* タブ */
+    .tabs {
+      display: flex;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      color: #888;
+    }
+    .tab.active {
+      color: #4a90d9;
+      border-bottom-color: #4a90d9;
+    }
+
+    /* ユーザー情報 */
+    .user-bar {
+      background: #fff;
+      padding: 10px 20px;
+      font-size: 12px;
+      color: #666;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .usage-badge {
+      background: #e8f4fd;
+      color: #4a90d9;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    /* 認証画面 */
+    .auth-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      text-align: center;
+    }
+    .auth-screen p {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .login-btn {
+      background: #4a90d9;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 32px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .login-btn:hover { background: #3a7bc8; }
+
+    /* コンテンツ */
+    .content { padding: 16px 20px; }
+
+    /* 履歴 */
+    .history-list { list-style: none; }
+    .history-item {
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .history-mode {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+    .history-mode.dictionary { background: #e8f4fd; color: #4a90d9; }
+    .history-mode.translate { background: #e8faf0; color: #3cb371; }
+    .history-input {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+    .history-output {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .history-time {
+      font-size: 10px;
+      color: #aaa;
+      margin-top: 6px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #aaa;
+      font-size: 13px;
+    }
+
+    /* 設定 */
+    .settings-section {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .settings-section h3 {
+      font-size: 13px;
+      margin-bottom: 10px;
+      color: #555;
+    }
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+    }
+    .setting-row label {
+      font-size: 13px;
+      color: #333;
+    }
+    .setting-row select, .setting-row input {
+      padding: 6px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .save-settings-btn {
+      width: 100%;
+      padding: 10px;
+      background: #4a90d9;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    .save-settings-btn:hover { background: #3a7bc8; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #d4edda; color: #155724; }
+    .toast.error { background: #f8d7da; color: #721c24; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <!-- 認証前画面 -->
+  <div id="authScreen" class="auth-screen">
+    <h1 style="margin-bottom: 12px;">AI辞書</h1>
+    <p>Googleアカウントでログインして<br>AI辞書を利用できます。<br>無料プランは1日5回まで。</p>
+    <button class="login-btn" id="loginBtn">Googleでログイン</button>
+  </div>
+
+  <!-- メイン画面 -->
+  <div id="mainApp" class="hidden">
+    <div class="header">
+      <h1>AI辞書</h1>
+      <div class="header-actions">
+        <button class="icon-btn" id="settingsToggle" title="設定">⚙️</button>
+        <button class="icon-btn" id="logoutBtn" title="ログアウト">🚪</button>
+      </div>
+    </div>
+
+    <div class="user-bar" id="userBar">
+      <span id="userEmail">-</span>
+      <span class="usage-badge" id="usageBadge">- / 5</span>
+    </div>
+
+    <div class="tabs" id="tabBar">
+      <div class="tab active" data-tab="history">履歴</div>
+      <div class="tab" data-tab="settings">設定</div>
+    </div>
+
+    <!-- 履歴タブ -->
+    <div id="historyTab" class="content">
+      <ul class="history-list" id="historyList"></ul>
+      <div class="empty-state hidden" id="emptyState">まだ履歴がありません</div>
+    </div>
+
+    <!-- 設定タブ -->
+    <div id="settingsTab" class="content hidden">
+      <div class="settings-section">
+        <h3>出力言語</h3>
+        <div class="setting-row">
+          <label>AIの回答言語</label>
+          <select id="outputLang">
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+            <option value="ko">한국어</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>サイドパネル言語</h3>
+        <div class="setting-row">
+          <label>UI言語</label>
+          <select id="uiLang">
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>履歴</h3>
+        <div class="setting-row">
+          <label>保存件数</label>
+          <select id="historyLimit">
+            <option value="20">20件</option>
+            <option value="30" selected>30件</option>
+            <option value="40">40件</option>
+            <option value="50">50件</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="save-settings-btn" id="saveSettingsBtn">設定を保存</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

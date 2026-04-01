@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "AI辞書",
+  "version": "2.0",
+  "description": "選択テキストのAI辞書検索・翻訳ができます",
+  "permissions": ["storage", "sidePanel", "identity"],
+  "host_permissions": [],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {},
+  "oauth2": {
+    "client_id": "YOUR_CHROME_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "email",
+      "profile"
+    ]
+  },
+  "key": ""
+}
