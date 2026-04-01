@@ -19,7 +19,7 @@
   },
   "action": {},
   "oauth2": {
-    "client_id": "YOUR_CHROME_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "555921050659-iuncssae03mge3364rnmjk1r3ccjkc2s.apps.googleusercontent.com",
     "scopes": [
       "openid",
       "email",

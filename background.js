@@ -4,7 +4,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 // ====== 設定 ======
 // TODO: デプロイ後に実際のCloud Functions URLに差し替え
 const API_BASE = "https://asia-northeast1-YOUR_PROJECT_ID.cloudfunctions.net";
-const FIREBASE_API_KEY = "YOUR_FIREBASE_API_KEY";
+const FIREBASE_API_KEY = "AIzaSyDeq_q2XRmEOqz6Z4WqbNsiLvKIVbe7QY8";
 
 // ====== Google認証 → Firebase Auth ======
 async function getFirebaseIdToken() {
