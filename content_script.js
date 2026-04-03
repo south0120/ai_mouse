@@ -108,6 +108,28 @@ function handleAIQuery(text, mode, popup) {
         } else if (res.error) {
           resultArea.textContent = res.error;
           resultArea.style.color = "#f88";
+
+          // 無料枠超過時：アップグレードボタン表示
+          if (res.error.includes("無料枠") || res.error.includes("月間クレジット")) {
+            const actionBtn = document.createElement("button");
+            actionBtn.textContent = "Proにアップグレード";
+            Object.assign(actionBtn.style, {
+              marginTop: "8px",
+              width: "100%",
+              padding: "8px",
+              background: "#ff9800",
+              color: "#fff",
+              border: "none",
+              borderRadius: "4px",
+              fontSize: "12px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            });
+            actionBtn.addEventListener("click", () => {
+              chrome.runtime.openOptionsPage();
+            });
+            resultArea.appendChild(actionBtn);
+          }
         } else {
           resultArea.textContent = res.answer;
           resultArea.style.color = "#ddd";
@@ -121,8 +143,21 @@ function handleAIQuery(text, mode, popup) {
               marginTop: "6px",
               textAlign: "right",
             });
-            remainTag.textContent = `残り ${res.remaining} 回 / 今日`;
+            remainTag.textContent = `残り ${res.remaining} 回 / ${res.plan === "free" ? "今日" : "月間"}`;
             resultArea.appendChild(remainTag);
+          }
+
+          // 使用クレジット表示（有料ユーザー向け）
+          if (res.creditUsed && res.plan !== "free") {
+            const creditTag = document.createElement("div");
+            Object.assign(creditTag.style, {
+              fontSize: "10px",
+              color: "#888",
+              marginTop: "3px",
+              textAlign: "right",
+            });
+            creditTag.textContent = `消費: ${res.creditUsed} クレジット`;
+            resultArea.appendChild(creditTag);
           }
         }
       }

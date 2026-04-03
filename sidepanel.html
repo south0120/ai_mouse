@@ -214,8 +214,10 @@
   <!-- 認証前画面 -->
   <div id="authScreen" class="auth-screen">
     <h1 style="margin-bottom: 12px;">AI辞書</h1>
-    <p>Googleアカウントでログインして<br>AI辞書を利用できます。<br>無料プランは1日5回まで。</p>
+    <p>Googleアカウントでログインして利用できます。<br>ログイン不要の匿名利用なら1日10回まで無料です。</p>
     <button class="login-btn" id="loginBtn">Googleでログイン</button>
+    <button class="login-btn" id="anonymousBtn" style="margin-top: 8px; background: #777;">匿名で続行（1日10回）</button>
+    <button class="login-btn" id="debugBtn" style="margin-top: 8px; background: #999; font-size: 12px;">設定確認</button>
   </div>
 
   <!-- メイン画面 -->
@@ -286,6 +288,94 @@
       </div>
 
       <button class="save-settings-btn" id="saveSettingsBtn">設定を保存</button>
+
+      <div class="settings-section" style="margin-top: 20px; background: #fafafa; border: 1px solid #ddd;">
+        <h3>🔧 デバッグ情報</h3>
+        <div id="debugInfo" style="font-size: 12px; line-height: 1.8; color: #666;"></div>
+      </div>
+
+      <!-- プラン管理セクション -->
+      <div class="settings-section" style="margin-top: 20px;">
+        <h3>💳 プラン管理</h3>
+        <div id="planInfo" style="font-size: 13px; color: #666; line-height: 1.8;"></div>
+        <div style="display: flex; gap: 8px; margin-top: 12px;">
+          <button id="changePlanBtn" class="save-settings-btn" style="flex: 1; background: #4a90d9;">プラン変更</button>
+          <button id="byokSetupBtn" class="save-settings-btn" style="flex: 1; background: #666;">BYOK設定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- プラン選択モーダル -->
+  <div id="planModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div style="background: #fff; border-radius: 12px; padding: 24px; max-width: 90%; width: 400px; max-height: 80vh; overflow-y: auto;">
+      <h2 style="margin-bottom: 16px;">プランを選択</h2>
+
+      <!-- Freeプラン -->
+      <div class="plan-card" data-plan="free" style="border: 2px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s;">
+        <div style="font-weight: 600; margin-bottom: 4px;">無料</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">1日10回まで</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;">¥0/月</div>
+      </div>
+
+      <!-- Proプラン -->
+      <div class="plan-card" data-plan="pro" style="border: 2px solid #4a90d9; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: #f0f4f8; transition: all 0.2s;">
+        <div style="font-weight: 600; margin-bottom: 4px; color: #4a90d9;">Pro</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">月1,000クレジット</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;">¥480/月</div>
+        <div style="font-size: 11px; color: #999; margin-top: 8px;">✓ 履歴保存 ✓ 優先サポート</div>
+      </div>
+
+      <!-- Pro+プラン -->
+      <div class="plan-card" data-plan="pro_plus" style="border: 2px solid #32a852; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: #f0f8f0; transition: all 0.2s;">
+        <div style="font-weight: 600; margin-bottom: 4px; color: #32a852;">Pro+ (推奨)</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">月3,000クレジット</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;">¥798/月</div>
+        <div style="font-size: 11px; color: #999; margin-top: 8px;">✓ 高速処理 ✓ 優先サポート</div>
+      </div>
+
+      <!-- BYOKプラン -->
+      <div class="plan-card" data-plan="byok" style="border: 2px solid #f57c00; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: #fff8f0; transition: all 0.2s;">
+        <div style="font-weight: 600; margin-bottom: 4px; color: #f57c00;">BYOK</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">自分のAPIキーを使用</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;">¥165/月</div>
+        <div style="font-size: 11px; color: #999; margin-top: 8px;">✓ クレジット無制限 ✓ APIコスト削減</div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button id="planCancelBtn" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #fff;">キャンセル</button>
+        <button id="planConfirmBtn" style="flex: 1; padding: 10px; background: #4a90d9; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">選択</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BYOK設定モーダル -->
+  <div id="byokModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div style="background: #fff; border-radius: 12px; padding: 24px; max-width: 90%; width: 400px; max-height: 80vh; overflow-y: auto;">
+      <h2 style="margin-bottom: 8px;">BYOK設定</h2>
+      <p style="font-size: 12px; color: #999; margin-bottom: 16px;">Google AI StudioのGemini APIキーを入力してください</p>
+
+      <input id="byokApiKeyInput" type="password" placeholder="AIzaSyD..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; font-size: 12px; font-family: monospace;">
+
+      <div id="byokStatus" style="font-size: 12px; margin-bottom: 12px; display: none;"></div>
+
+      <div style="display: flex; gap: 8px;">
+        <button id="byokCancelBtn" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #fff;">キャンセル</button>
+        <button id="byokConfirmBtn" style="flex: 1; padding: 10px; background: #f57c00; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- アップセルダイアログ（使用枠超過時） -->
+  <div id="upsellModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000;">
+    <div style="background: #fff; border-radius: 12px; padding: 24px; max-width: 90%; width: 350px; text-align: center;">
+      <h2 style="margin-bottom: 8px; color: #f57c00;">無料枠を使い切りました</h2>
+      <p style="color: #666; margin-bottom: 20px; line-height: 1.6;">有料プランにアップグレードして、継続して利用できます</p>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button id="upsellUpgradeBtn" style="padding: 12px; background: #4a90d9; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">プラン変更</button>
+        <button id="upsellDismissBtn" style="padding: 12px; background: #f0f0f0; color: #333; border: none; border-radius: 6px; cursor: pointer;">閉じる</button>
+      </div>
     </div>
   </div>
 

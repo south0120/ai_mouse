@@ -2,8 +2,51 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // usage コレクションはCloud Functionsからのみアクセス（Admin SDK）
-    // クライアントからの直接アクセスは拒否
+    // ユーザー情報（読み取り：本人のみ、更新：制限）
+    match /users/{uid} {
+      allow read: if request.auth.uid == uid;
+      allow write: if request.auth.uid == uid && (
+        !request.resource.data.planId ||
+        !request.resource.data.stripeCustomerId ||
+        !request.resource.data.stripeSubscriptionId
+      );
+    }
+
+    // クレジット情報（読み取り：本人のみ、書き込み：Cloud Functions のみ）
+    match /credits/{document=**} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    // 日次無料枠（読み取り：本人のみ、書き込み：Cloud Functions のみ）
+    match /daily_free/{document=**} {
+      allow read: if resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // 匿名ユーザー用日次無料枠（読み取り：なし、書き込み：Cloud Functions のみ）
+    match /daily_free_anon/{document=**} {
+      allow read, write: if false;
+    }
+
+    // サブスクリプション履歴（読み取り：本人のみ）
+    match /subscriptions/{document=**} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    // キャッシュ（読み取り：全員、書き込み：Cloud Functions のみ）
+    match /cache/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // レート制限（読み取り：なし、書き込み：Cloud Functions のみ）
+    match /rate_limits/{document=**} {
+      allow read, write: if false;
+    }
+
+    // その他すべて拒否
     match /{document=**} {
       allow read, write: if false;
     }
