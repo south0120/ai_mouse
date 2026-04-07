@@ -4,5 +4,12 @@
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "public",
+    "rewrites": [
+      { "source": "/checkout-success", "destination": "/checkout-success.html" },
+      { "source": "/checkout-cancel", "destination": "/checkout-cancel.html" }
+    ]
   }
 }

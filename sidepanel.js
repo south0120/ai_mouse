@@ -293,6 +293,14 @@ planConfirmBtn.addEventListener("click", () => {
     return;
   }
 
+  // 未ログインの場合はログインを促す
+  if (!loggedIn) {
+    planModal.classList.add("hidden");
+    showAuth();
+    showToast("プラン変更にはログインが必要です", "error");
+    return;
+  }
+
   planConfirmBtn.textContent = "処理中...";
   planConfirmBtn.disabled = true;
 

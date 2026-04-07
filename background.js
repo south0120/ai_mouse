@@ -3,7 +3,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
 // ====== 設定 ======
 // TODO: デプロイ後に実際のCloud Functions URLに差し替え
-const API_BASE = "https://asia-northeast1-YOUR_PROJECT_ID.cloudfunctions.net";
+const API_BASE = "https://asia-northeast1-ai-mouse-fc8c4.cloudfunctions.net";
 const FIREBASE_API_KEY = "AIzaSyDeq_q2XRmEOqz6Z4WqbNsiLvKIVbe7QY8";
 
 // ====== 設定チェック ======
@@ -42,7 +42,7 @@ async function getFirebaseIdToken() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        postBody: `id_token=${googleToken}&providerId=google.com`,
+        postBody: `access_token=${googleToken}&providerId=google.com`,
         requestUri: chrome.identity.getRedirectURL(),
         returnIdpCredential: true,
         returnSecureToken: true,
@@ -103,7 +103,7 @@ async function signIn() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        postBody: `id_token=${googleToken}&providerId=google.com`,
+        postBody: `access_token=${googleToken}&providerId=google.com`,
         requestUri: chrome.identity.getRedirectURL(),
         returnIdpCredential: true,
         returnSecureToken: true,
@@ -111,7 +111,11 @@ async function signIn() {
     }
   );
 
-  if (!res.ok) throw new Error("Firebase認証に失敗しました");
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    console.error("Firebase signIn error:", errData);
+    throw new Error(errData.error?.message || "Firebase認証に失敗しました");
+  }
   const data = await res.json();
   return {
     idToken: data.idToken,
@@ -170,11 +174,11 @@ async function queryAI(text, mode, outputLang) {
   }
 
   let data;
-  const text = await res.text();
+  const rawBody = await res.text();
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(rawBody);
   } catch {
-    console.error("queryAI response not JSON", text);
+    console.error("queryAI response not JSON", rawBody);
     throw new Error(`API応答エラー（JSON解析失敗）: ${res.status}`);
   }
 
@@ -212,11 +216,11 @@ async function getUsage() {
   }
 
   let data;
-  const text = await res.text();
+  const rawBody = await res.text();
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(rawBody);
   } catch {
-    console.error("getUsage response not JSON", text);
+    console.error("getUsage response not JSON", rawBody);
     throw new Error(`API応答エラー（JSON解析失敗）: ${res.status}`);
   }
 

@@ -3,3 +3,5 @@ functions/node_modules/
 .env
 functions/.env
 *.log
+.firebase/
+開発途中のスクショ/

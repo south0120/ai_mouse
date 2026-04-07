@@ -1,9 +1,15 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const Stripe = require("stripe");
 
 admin.initializeApp();
 const db = admin.firestore();
+
+// Stripe初期化
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2024-06-20",
+});
 
 // ====== プラン定義 ======
 const PLANS = {
@@ -606,27 +612,50 @@ exports.createCheckoutSession = onRequest(
 
     try {
       const planDef = PLANS[planId];
+      if (!planDef.stripePriceId) {
+        return res.status(400).json({ error: "無料プランではCheckoutは不要です" });
+      }
+
       const userDoc = await db.collection("users").doc(user.uid).get();
       const userData = userDoc.exists ? userDoc.data() : {};
 
       // Stripe顧客IDがない場合は作成
       let stripeCustomerId = userData.stripeCustomerId;
       if (!stripeCustomerId) {
-        // 本番ではStripe APIで実際のCustomer作成
-        // ここはプレースホルダー
-        stripeCustomerId = `cus_${user.uid.substring(0, 20)}`;
-        await db.collection("users").doc(user.uid).update({
-          stripeCustomerId,
+        const customer = await stripe.customers.create({
+          metadata: { firebaseUid: user.uid },
+          email: user.email || undefined,
         });
+        stripeCustomerId = customer.id;
+
+        const updateData = { stripeCustomerId };
+        if (userDoc.exists) {
+          await db.collection("users").doc(user.uid).update(updateData);
+        } else {
+          await db.collection("users").doc(user.uid).set({
+            ...updateData,
+            planId: "free",
+            createdAt: new Date(),
+          });
+        }
       }
 
-      // Checkout Session の URL（本番ではStripe API使用）
-      // テスト用のダミーURL
-      const checkoutUrl = `https://billing.stripe.com/session/${planId}?customer=${stripeCustomerId}`;
+      // Stripe Checkout Session 作成
+      const session = await stripe.checkout.sessions.create({
+        customer: stripeCustomerId,
+        mode: "subscription",
+        line_items: [{ price: planDef.stripePriceId, quantity: 1 }],
+        success_url: `https://ai-mouse-fc8c4.web.app/checkout-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `https://ai-mouse-fc8c4.web.app/checkout-cancel`,
+        subscription_data: {
+          metadata: { firebaseUid: user.uid, planId },
+        },
+        metadata: { firebaseUid: user.uid, planId },
+      });
 
       return res.json({
-        sessionId: `cs_test_${Date.now()}`,
-        url: checkoutUrl,
+        sessionId: session.id,
+        url: session.url,
       });
     } catch (e) {
       console.error("createCheckoutSession error:", e);
@@ -644,8 +673,17 @@ exports.handleStripeWebhook = onRequest(
       return;
     }
 
-    // 本番では署名検証を実装
-    const event = req.body;
+    // 署名検証
+    const sig = req.headers["stripe-signature"];
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.rawBody, sig, webhookSecret);
+    } catch (err) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).json({ error: "署名検証に失敗しました" });
+    }
 
     try {
       switch (event.type) {
@@ -674,28 +712,126 @@ exports.handleStripeWebhook = onRequest(
   }
 );
 
+// Stripe Customer ID → Firebase UID を検索
+async function findUidByStripeCustomerId(stripeCustomerId) {
+  const snapshot = await db
+    .collection("users")
+    .where("stripeCustomerId", "==", stripeCustomerId)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) return null;
+  return snapshot.docs[0].id;
+}
+
+// Stripe Price ID → planId を逆引き
+function getPlanIdByPriceId(priceId) {
+  for (const [planId, plan] of Object.entries(PLANS)) {
+    if (plan.stripePriceId === priceId) return planId;
+  }
+  return null;
+}
+
 // サブスクリプション更新ハンドラ
 async function handleSubscriptionUpdate(subscription) {
-  // Stripe subscriptionから userId を取得（custom fieldで保存してあることを想定）
-  // 本番では適切な検証・マッピング処理を追加
-  console.log("Subscription updated:", subscription.id);
+  const uid =
+    subscription.metadata?.firebaseUid ||
+    (await findUidByStripeCustomerId(subscription.customer));
 
-  // ここでユーザープラン更新処理を実装
+  if (!uid) {
+    console.error("No Firebase UID found for subscription:", subscription.id);
+    return;
+  }
+
+  const priceId = subscription.items?.data?.[0]?.price?.id;
+  const planId = getPlanIdByPriceId(priceId) || subscription.metadata?.planId;
+
+  if (!planId) {
+    console.error("Unknown price ID:", priceId);
+    return;
+  }
+
+  // ユーザープラン更新
+  await db.collection("users").doc(uid).set(
+    {
+      planId,
+      stripeSubscriptionId: subscription.id,
+      stripeSubscriptionStatus: subscription.status,
+      updatedAt: new Date(),
+    },
+    { merge: true }
+  );
+
+  // アクティブなサブスクリプションの場合、月次クレジットを初期化
+  if (subscription.status === "active") {
+    const month = getCurrentMonth();
+    const planDef = PLANS[planId];
+    const creditsRef = db.collection("credits").doc(`${uid}_${month}`);
+    const creditDoc = await creditsRef.get();
+
+    if (!creditDoc.exists) {
+      await creditsRef.set({
+        userId: uid,
+        month,
+        planId,
+        used: 0,
+        limit: planDef.monthlyCredit,
+        createdAt: new Date(),
+      });
+    } else {
+      // プラン変更の場合、上限を更新
+      await creditsRef.update({
+        planId,
+        limit: planDef.monthlyCredit,
+      });
+    }
+  }
+
+  console.log(`Subscription updated: uid=${uid}, plan=${planId}, status=${subscription.status}`);
 }
 
 // サブスクリプション キャンセルハンドラ
 async function handleSubscriptionCanceled(subscription) {
-  console.log("Subscription canceled:", subscription.id);
+  const uid =
+    subscription.metadata?.firebaseUid ||
+    (await findUidByStripeCustomerId(subscription.customer));
 
-  // ユーザーを "free" プランに戻す
-  // userId → subscription を検索 → ユーザーをFreeに戻す
+  if (!uid) {
+    console.error("No Firebase UID found for canceled subscription:", subscription.id);
+    return;
+  }
+
+  // ユーザーを free プランに戻す
+  await db.collection("users").doc(uid).update({
+    planId: "free",
+    stripeSubscriptionId: null,
+    stripeSubscriptionStatus: "canceled",
+    updatedAt: new Date(),
+  });
+
+  console.log(`Subscription canceled: uid=${uid}`);
 }
 
 // 支払い成功ハンドラ
 async function handlePaymentSucceeded(invoice) {
-  console.log("Payment succeeded:", invoice.id);
+  const uid = await findUidByStripeCustomerId(invoice.customer);
+  if (!uid) {
+    console.log("No Firebase UID for invoice:", invoice.id);
+    return;
+  }
 
   // 支払い履歴を記録
+  await db.collection("subscriptions").add({
+    userId: uid,
+    stripeInvoiceId: invoice.id,
+    amountPaid: invoice.amount_paid,
+    currency: invoice.currency,
+    status: invoice.status,
+    paidAt: new Date(invoice.status_transitions?.paid_at * 1000 || Date.now()),
+    createdAt: new Date(),
+  });
+
+  console.log(`Payment recorded: uid=${uid}, invoice=${invoice.id}`);
 }
 
 // サブスクリプション キャンセルAPI
@@ -720,16 +856,18 @@ exports.cancelSubscription = onRequest(
         return res.status(400).json({ error: "アクティブなサブスクリプションがありません" });
       }
 
-      // 本番で Stripe API を呼び出してキャンセル
-      // stripe.subscriptions.del(userData.stripeSubscriptionId);
-
-      // ユーザープラン を free に更新
-      await db.collection("users").doc(user.uid).update({
-        planId: "free",
-        stripeSubscriptionId: null,
+      // Stripe でサブスクリプションをキャンセル（期間終了時に停止）
+      await stripe.subscriptions.update(userData.stripeSubscriptionId, {
+        cancel_at_period_end: true,
       });
 
-      res.json({ success: true, message: "サブスクリプションをキャンセルしました" });
+      // ステータスを更新（実際のプラン変更はWebhookで処理）
+      await db.collection("users").doc(user.uid).update({
+        stripeSubscriptionStatus: "canceling",
+        updatedAt: new Date(),
+      });
+
+      res.json({ success: true, message: "サブスクリプションは現在の請求期間終了時にキャンセルされます" });
     } catch (e) {
       console.error("cancelSubscription error:", e);
       res.status(500).json({ error: "キャンセル処理に失敗しました" });
