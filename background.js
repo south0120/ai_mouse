@@ -2,9 +2,50 @@
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
 // ====== 設定 ======
-// TODO: デプロイ後に実際のCloud Functions URLに差し替え
 const API_BASE = "https://asia-northeast1-ai-mouse-fc8c4.cloudfunctions.net";
 const FIREBASE_API_KEY = "AIzaSyDeq_q2XRmEOqz6Z4WqbNsiLvKIVbe7QY8";
+
+// ====== Mercury-2 設定 ======
+const MERCURY_API_BASE = "https://api.inceptionlabs.ai/v1";
+
+async function getMercuryApiKey() {
+  const data = await chrome.storage.sync.get({ mercuryApiKey: "" });
+  return data.mercuryApiKey;
+}
+
+async function queryMercury(text, mode, outputLang) {
+  const apiKey = await getMercuryApiKey();
+  if (!apiKey) throw new Error("Mercury APIキーが未設定です。オプションページで設定してください。");
+
+  const systemPrompts = {
+    dictionary: `あなたは高精度な日本語辞書AIです。与えられた単語やフレーズの意味を、簡潔かつ正確に辞書形式で回答してください。語源、品詞、用例も含めてください。出力言語: ${outputLang === 'en' ? '英語' : '日本語'}`,
+    translate: `あなたは高精度な翻訳AIです。与えられたテキストを${outputLang === 'ja' ? '日本語' : '英語'}に翻訳してください。自然で読みやすい翻訳を心がけてください。`,
+  };
+
+  const res = await fetch(`${MERCURY_API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "mercury-2",
+      messages: [
+        { role: "system", content: systemPrompts[mode] || systemPrompts.dictionary },
+        { role: "user", content: text },
+      ],
+      max_tokens: 500,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Mercury API error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return { answer: data.choices[0].message.content, remaining: -1 };
+}
 
 // ====== 設定チェック ======
 function areSettingsConfigured() {
@@ -234,13 +275,19 @@ async function getUsage() {
 // ====== メッセージハンドラ ======
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "queryAI") {
-    queryAI(msg.text, msg.mode || "dictionary", msg.outputLang || "ja")
-      .then((data) => {
-        // 履歴に保存
-        saveHistory(msg.text, data.answer, msg.mode || "dictionary");
-        sendResponse({ answer: data.answer, remaining: data.remaining });
-      })
-      .catch((e) => sendResponse({ error: e.message }));
+    // AIプロバイダーの選択（Mercury or Cloud Functions）
+    chrome.storage.sync.get({ aiProvider: "cloud" }, (settings) => {
+      const queryFn = settings.aiProvider === "mercury"
+        ? queryMercury(msg.text, msg.mode || "dictionary", msg.outputLang || "ja")
+        : queryAI(msg.text, msg.mode || "dictionary", msg.outputLang || "ja");
+
+      queryFn
+        .then((data) => {
+          saveHistory(msg.text, data.answer, msg.mode || "dictionary");
+          sendResponse({ answer: data.answer, remaining: data.remaining });
+        })
+        .catch((e) => sendResponse({ error: e.message }));
+    });
     return true;
   }
 
