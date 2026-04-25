@@ -250,12 +250,19 @@ function loadSettings() {
       historyLimit.value = String(data.historyLimit);
       if (aiProviderEl) aiProviderEl.value = data.aiProvider || "mercury";
       applyI18n(data.uiLang);
+      // デバッグプラン上書き
+      chrome.storage.local.get({ debugPlanOverride: "" }, (d) => {
+        const sel = document.getElementById("debugPlanOverride");
+        if (sel) sel.value = d.debugPlanOverride || "";
+      });
     }
   );
 }
 
 saveSettingsBtn.addEventListener("click", () => {
   const newLang = uiLang.value;
+  const debugPlanEl = document.getElementById("debugPlanOverride");
+  const debugPlan = debugPlanEl ? debugPlanEl.value : "";
   chrome.storage.sync.set(
     {
       outputLang: outputLang.value,
@@ -264,9 +271,12 @@ saveSettingsBtn.addEventListener("click", () => {
       aiProvider: "mercury",
     },
     () => {
-      applyI18n(newLang);
-      loadHistory();
-      showToast(t.saveSettingsDone, "success");
+      chrome.storage.local.set({ debugPlanOverride: debugPlan }, () => {
+        applyI18n(newLang);
+        loadHistory();
+        loadPlanInfo();
+        showToast(t.saveSettingsDone, "success");
+      });
     }
   );
 });
@@ -326,7 +336,11 @@ async function loadPlanInfo() {
     });
   });
 
-  currentPlan = res.plan || "free";
+  // デバッグ上書き優先
+  const localOverride = await new Promise((resolve) => {
+    chrome.storage.local.get({ debugPlanOverride: "" }, (d) => resolve(d.debugPlanOverride || ""));
+  });
+  currentPlan = localOverride || res.plan || "free";
 
   const planLabels = currentLang === "en"
     ? {

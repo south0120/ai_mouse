@@ -316,6 +316,17 @@
       <div class="settings-section" style="margin-top: 20px; background: #fafafa; border: 1px solid #ddd;">
         <h3 data-i18n="debugInfoSection">🔧 デバッグ情報</h3>
         <div id="debugInfo" style="font-size: 12px; line-height: 1.8; color: #666;"></div>
+        <div style="margin-top:12px; padding-top:12px; border-top:1px dashed #ccc;">
+          <label style="font-size:12px; font-weight:600;" data-i18n="debugPlanLabel">プラン上書き（開発用）</label>
+          <div style="font-size:11px; color:#888; margin:2px 0 6px;" data-i18n="debugPlanNote">Stripe webhookが未連携の場合のテスト用。サーバー側プランは変更されません</div>
+          <select id="debugPlanOverride" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+            <option value="">（上書きしない）</option>
+            <option value="free">free</option>
+            <option value="pro">pro</option>
+            <option value="pro_plus">pro_plus</option>
+            <option value="byok">byok</option>
+          </select>
+        </div>
       </div>
 
       <!-- プラン管理セクション -->

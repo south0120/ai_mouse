@@ -627,20 +627,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "addVocab") {
     (async () => {
       try {
-        // プランチェック
-        const planRes = await new Promise((resolve) => {
-          getFirebaseIdToken()
-            .then((idToken) =>
-              fetch(`${API_BASE}/getSubscriptionStatus`, {
-                headers: { Authorization: `Bearer ${idToken}` },
-              })
-                .then((r) => r.json())
-                .then(resolve)
-                .catch(() => resolve({ plan: "free" }))
-            )
-            .catch(() => resolve({ plan: "free" }));
+        // プランチェック（ローカル上書き > サーバー）
+        const localOverride = await new Promise((resolve) => {
+          chrome.storage.local.get({ debugPlanOverride: "" }, (d) =>
+            resolve(d.debugPlanOverride || "")
+          );
         });
-        const plan = planRes.plan || "free";
+        let plan = localOverride;
+        if (!plan) {
+          const planRes = await new Promise((resolve) => {
+            getFirebaseIdToken()
+              .then((idToken) =>
+                fetch(`${API_BASE}/getSubscriptionStatus`, {
+                  headers: { Authorization: `Bearer ${idToken}` },
+                })
+                  .then((r) => r.json())
+                  .then(resolve)
+                  .catch(() => resolve({ plan: "free" }))
+              )
+              .catch(() => resolve({ plan: "free" }));
+          });
+          plan = planRes.plan || "free";
+        }
         if (plan !== "pro" && plan !== "pro_plus" && plan !== "byok") {
           sendResponse({ error: "有料プランが必要です" });
           return;
