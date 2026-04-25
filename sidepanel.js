@@ -16,6 +16,9 @@ const outputLang = document.getElementById("outputLang");
 const uiLang = document.getElementById("uiLang");
 const historyLimit = document.getElementById("historyLimit");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+const aiProviderEl = document.getElementById("aiProvider");
+const byokProviderSelect = document.getElementById("byokProviderSelect");
+const byokKeyHelp = document.getElementById("byokKeyHelp");
 const toast = document.getElementById("toast");
 const debugInfo = document.getElementById("debugInfo");
 
@@ -155,7 +158,7 @@ function renderHistory(history) {
     const li = document.createElement("li");
     li.className = "history-item";
 
-    const modeLabel = item.mode === "translate" ? "翻訳" : "辞書";
+    const modeLabel = t.historyMode[item.mode] || t.historyMode.dictionary;
     const modeClass = item.mode === "translate" ? "translate" : "dictionary";
 
     const time = new Date(item.timestamp);
@@ -178,26 +181,85 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// ====== i18n ======
+let currentLang = "ja";
+let t = getI18n("ja");
+
+function setHtmlWithBr(el, str) {
+  el.replaceChildren();
+  const parts = str.split(/<br\s*\/?>/i);
+  parts.forEach((part, i) => {
+    el.append(document.createTextNode(part));
+    if (i < parts.length - 1) el.append(document.createElement("br"));
+  });
+}
+
+function applyI18n(lang) {
+  currentLang = lang;
+  t = getI18n(lang);
+  document.documentElement.lang = lang;
+  document.title = t.appName;
+
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n");
+    if (t[key] != null && typeof t[key] === "string") {
+      el.textContent = t[key];
+    }
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-html");
+    if (t[key] != null && typeof t[key] === "string") {
+      setHtmlWithBr(el, t[key]);
+    }
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-title");
+    if (t[key] != null) el.title = t[key];
+  });
+
+  // 履歴件数セレクトのサフィックス
+  const historyOpts = document.querySelectorAll("#historyLimit option");
+  historyOpts.forEach((o) => {
+    o.textContent = `${o.value}${t.historyItemsSuffix}`;
+  });
+
+  // BYOKボタンのtooltip更新
+  if (typeof updateByokButtonState === "function") updateByokButtonState();
+}
+
 // ====== 設定 ======
 function loadSettings() {
   chrome.storage.sync.get(
-    { outputLang: "ja", uiLang: "ja", historyLimit: 30 },
+    {
+      outputLang: "ja",
+      uiLang: "ja",
+      historyLimit: 30,
+      aiProvider: "mercury",
+    },
     (data) => {
       outputLang.value = data.outputLang;
       uiLang.value = data.uiLang;
       historyLimit.value = String(data.historyLimit);
+      if (aiProviderEl) aiProviderEl.value = data.aiProvider || "mercury";
+      applyI18n(data.uiLang);
     }
   );
 }
 
 saveSettingsBtn.addEventListener("click", () => {
+  const newLang = uiLang.value;
   chrome.storage.sync.set(
     {
       outputLang: outputLang.value,
-      uiLang: uiLang.value,
+      uiLang: newLang,
       historyLimit: Number(historyLimit.value),
+      aiProvider: "mercury",
     },
-    () => showToast("設定を保存しました", "success")
+    () => {
+      applyI18n(newLang);
+      loadHistory();
+      showToast(t.saveSettingsDone, "success");
+    }
   );
 });
 
@@ -236,6 +298,19 @@ debugBtn.addEventListener("click", () => {
 });
 
 // ====== プラン管理 ======
+function updateByokButtonState() {
+  if (!byokSetupBtn) return;
+  const enabled = currentPlan === "byok";
+  byokSetupBtn.disabled = !enabled;
+  byokSetupBtn.style.opacity = enabled ? "1" : "0.5";
+  byokSetupBtn.style.cursor = enabled ? "pointer" : "not-allowed";
+  byokSetupBtn.title = enabled
+    ? ""
+    : (currentLang === "en"
+        ? "Available only on the BYOK plan"
+        : "BYOKプラン契約者のみ利用できます");
+}
+
 async function loadPlanInfo() {
   const res = await new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: "getSubscriptionStatus" }, (response) => {
@@ -245,23 +320,48 @@ async function loadPlanInfo() {
 
   currentPlan = res.plan || "free";
 
-  const planDefs = {
-    free: { name: "無料", limit: "1日10回" },
-    pro: { name: "Pro", limit: "月1,000クレジット" },
-    pro_plus: { name: "Pro+", limit: "月3,000クレジット" },
-    byok: { name: "BYOK", limit: "無制限" },
-  };
+  const planLabels = currentLang === "en"
+    ? {
+        free: { name: "Free", limit: "10/day" },
+        pro: { name: "Pro", limit: "1,000 credits/month" },
+        pro_plus: { name: "Pro+", limit: "3,000 credits/month" },
+        byok: { name: "BYOK", limit: "Unlimited" },
+      }
+    : {
+        free: { name: "無料", limit: "1日10回" },
+        pro: { name: "Pro", limit: "月1,000クレジット" },
+        pro_plus: { name: "Pro+", limit: "月3,000クレジット" },
+        byok: { name: "BYOK", limit: "無制限" },
+      };
 
-  const planDef = planDefs[currentPlan] || planDefs.free;
+  const planDef = planLabels[currentPlan] || planLabels.free;
   const remaining = res.remaining || 0;
 
-  planInfo.innerHTML = `
-    <div style="margin-bottom: 12px;">
-      <div style="font-weight: 600; margin-bottom: 4px;">現在のプラン: <span style="color: #4a90d9;">${planDef.name}</span></div>
-      <div style="font-size: 12px; color: #666;">月間制限: ${planDef.limit}</div>
-      <div style="font-size: 12px; color: #666;">使用状況: ${res.used || 0}${typeof remaining === "number" ? ` / ${res.limit || 0}` : ""}</div>
-    </div>
-  `;
+  const labels = currentLang === "en"
+    ? { current: "Current plan", limit: "Monthly limit", usage: "Usage" }
+    : { current: "現在のプラン", limit: "月間制限", usage: "使用状況" };
+
+  planInfo.replaceChildren();
+  const wrap = document.createElement("div");
+  wrap.style.marginBottom = "12px";
+  const planLine = document.createElement("div");
+  planLine.style.fontWeight = "600";
+  planLine.style.marginBottom = "4px";
+  planLine.append(`${labels.current}: `);
+  const planSpan = document.createElement("span");
+  planSpan.style.color = "#4a90d9";
+  planSpan.textContent = planDef.name;
+  planLine.append(planSpan);
+  const limitLine = document.createElement("div");
+  limitLine.style.cssText = "font-size: 12px; color: #666;";
+  limitLine.textContent = `${labels.limit}: ${planDef.limit}`;
+  const usageLine = document.createElement("div");
+  usageLine.style.cssText = "font-size: 12px; color: #666;";
+  usageLine.textContent = `${labels.usage}: ${res.used || 0}${typeof remaining === "number" ? ` / ${res.limit || 0}` : ""}`;
+  wrap.append(planLine, limitLine, usageLine);
+  planInfo.appendChild(wrap);
+
+  updateByokButtonState();
 }
 
 changePlanBtn.addEventListener("click", () => {
@@ -327,34 +427,92 @@ planCancelBtn.addEventListener("click", () => {
 });
 
 // BYOK設定
+const BYOK_PROVIDER_INFO = {
+  mercury: {
+    placeholder: "sk-...",
+    help: "キー取得: <a href='https://platform.inceptionlabs.ai/' target='_blank' rel='noopener'>platform.inceptionlabs.ai</a>",
+  },
+  gemini: {
+    placeholder: "AIzaSy...",
+    help: "キー取得: <a href='https://aistudio.google.com/apikey' target='_blank' rel='noopener'>Google AI Studio</a>",
+  },
+  openai: {
+    placeholder: "sk-proj-...",
+    help: "キー取得: <a href='https://platform.openai.com/api-keys' target='_blank' rel='noopener'>OpenAI Dashboard</a>",
+  },
+};
+
+function updateByokFormUI() {
+  const provider = byokProviderSelect.value;
+  const info = BYOK_PROVIDER_INFO[provider];
+  if (!info) return;
+  byokApiKeyInput.placeholder = info.placeholder;
+  byokKeyHelp.replaceChildren();
+  const span = document.createElement("span");
+  span.append("キー取得: ");
+  const a = document.createElement("a");
+  const urlMatch = info.help.match(/href='([^']+)'/);
+  const textMatch = info.help.match(/>([^<]+)<\/a>/);
+  if (urlMatch && textMatch) {
+    a.href = urlMatch[1];
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = textMatch[1];
+    span.append(a);
+  }
+  byokKeyHelp.append(span);
+}
+
+byokProviderSelect.addEventListener("change", updateByokFormUI);
+
 byokSetupBtn.addEventListener("click", () => {
-  byokModal.classList.remove("hidden");
-  byokApiKeyInput.value = "";
+  if (currentPlan !== "byok") {
+    showToast(
+      currentLang === "en"
+        ? "Available only on the BYOK plan. Please upgrade your plan."
+        : "BYOKプラン契約者のみ利用できます。プラン変更が必要です。",
+      "error"
+    );
+    return;
+  }
+  chrome.storage.sync.get({ byokProvider: "mercury", byokApiKey: "" }, (data) => {
+    byokProviderSelect.value = data.byokProvider || "mercury";
+    byokApiKeyInput.value = data.byokApiKey || "";
+    updateByokFormUI();
+    byokModal.classList.remove("hidden");
+  });
 });
 
 byokConfirmBtn.addEventListener("click", () => {
+  const provider = byokProviderSelect.value;
   const apiKey = byokApiKeyInput.value.trim();
   if (!apiKey) {
     showToast("APIキーを入力してください", "error");
     return;
   }
 
-  byokConfirmBtn.textContent = "検証中...";
+  byokConfirmBtn.textContent = t.validating;
   byokConfirmBtn.disabled = true;
 
   chrome.runtime.sendMessage(
-    { type: "validateBYOKKey", apiKey },
+    { type: "saveBYOK", provider, apiKey },
     (res) => {
-      byokConfirmBtn.textContent = "保存";
+      byokConfirmBtn.textContent = t.validateAndSave;
       byokConfirmBtn.disabled = false;
 
       if (res?.error) {
-        showToast("APIキーが無効です: " + res.error, "error");
+        showToast(
+          (currentLang === "en" ? "Invalid API key: " : "APIキーが無効です: ") + res.error,
+          "error"
+        );
       } else if (res?.success) {
         byokModal.classList.add("hidden");
-        currentPlan = "byok";
-        loadPlanInfo();
-        showToast("BYOKが有効化されました", "success");
+        showToast(
+          currentLang === "en"
+            ? `BYOK (${provider}) enabled`
+            : `BYOK（${provider}）が有効化されました`,
+          "success"
+        );
       }
     }
   );

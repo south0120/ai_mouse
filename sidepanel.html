@@ -213,20 +213,20 @@
 <body>
   <!-- 認証前画面 -->
   <div id="authScreen" class="auth-screen">
-    <h1 style="margin-bottom: 12px;">AI辞書</h1>
-    <p>Googleアカウントでログインして利用できます。<br>ログイン不要の匿名利用なら1日10回まで無料です。</p>
-    <button class="login-btn" id="loginBtn">Googleでログイン</button>
-    <button class="login-btn" id="anonymousBtn" style="margin-top: 8px; background: #777;">匿名で続行（1日10回）</button>
-    <button class="login-btn" id="debugBtn" style="margin-top: 8px; background: #999; font-size: 12px;">設定確認</button>
+    <h1 style="margin-bottom: 12px;" data-i18n="appName">AI辞書</h1>
+    <p data-i18n-html="authIntro">Googleアカウントでログインして利用できます。<br>ログイン不要の匿名利用なら1日10回まで無料です。</p>
+    <button class="login-btn" id="loginBtn" data-i18n="signInGoogle">Googleでログイン</button>
+    <button class="login-btn" id="anonymousBtn" style="margin-top: 8px; background: #777;" data-i18n="continueAnon">匿名で続行（1日10回）</button>
+    <button class="login-btn" id="debugBtn" style="margin-top: 8px; background: #999; font-size: 12px;" data-i18n="checkSettings">設定確認</button>
   </div>
 
   <!-- メイン画面 -->
   <div id="mainApp" class="hidden">
     <div class="header">
-      <h1>AI辞書</h1>
+      <h1 data-i18n="appName">AI辞書</h1>
       <div class="header-actions">
-        <button class="icon-btn" id="settingsToggle" title="設定">⚙️</button>
-        <button class="icon-btn" id="logoutBtn" title="ログアウト">🚪</button>
+        <button class="icon-btn" id="settingsToggle" title="設定" data-i18n-title="settings">⚙️</button>
+        <button class="icon-btn" id="logoutBtn" title="ログアウト" data-i18n-title="signOut">🚪</button>
       </div>
     </div>
 
@@ -236,22 +236,26 @@
     </div>
 
     <div class="tabs" id="tabBar">
-      <div class="tab active" data-tab="history">履歴</div>
-      <div class="tab" data-tab="settings">設定</div>
+      <div class="tab active" data-tab="history" data-i18n="tabHistory">履歴</div>
+      <div class="tab" data-tab="settings" data-i18n="tabSettings">設定</div>
     </div>
 
     <!-- 履歴タブ -->
     <div id="historyTab" class="content">
       <ul class="history-list" id="historyList"></ul>
-      <div class="empty-state hidden" id="emptyState">まだ履歴がありません</div>
+      <div class="empty-state hidden" id="emptyState" data-i18n="noHistory">まだ履歴がありません</div>
     </div>
 
     <!-- 設定タブ -->
     <div id="settingsTab" class="content hidden">
+      <!-- AIプロバイダー設定はBYOKモーダルから設定（通常はMercury固定） -->
+      <input type="hidden" id="aiProvider" value="mercury">
+      <input type="hidden" id="mercuryApiKey" value="">
+
       <div class="settings-section">
-        <h3>出力言語</h3>
+        <h3 data-i18n="outputLangSection">出力言語</h3>
         <div class="setting-row">
-          <label>AIの回答言語</label>
+          <label data-i18n="outputLangLabel">AIの回答言語</label>
           <select id="outputLang">
             <option value="ja">日本語</option>
             <option value="en">English</option>
@@ -264,9 +268,9 @@
       </div>
 
       <div class="settings-section">
-        <h3>サイドパネル言語</h3>
+        <h3 data-i18n="uiLangSection">サイドパネル言語</h3>
         <div class="setting-row">
-          <label>UI言語</label>
+          <label data-i18n="uiLangLabel">UI言語</label>
           <select id="uiLang">
             <option value="ja">日本語</option>
             <option value="en">English</option>
@@ -275,32 +279,32 @@
       </div>
 
       <div class="settings-section">
-        <h3>履歴</h3>
+        <h3 data-i18n="historySection">履歴</h3>
         <div class="setting-row">
-          <label>保存件数</label>
+          <label data-i18n="historyLimitLabel">保存件数</label>
           <select id="historyLimit">
-            <option value="20">20件</option>
-            <option value="30" selected>30件</option>
-            <option value="40">40件</option>
-            <option value="50">50件</option>
+            <option value="20">20</option>
+            <option value="30" selected>30</option>
+            <option value="40">40</option>
+            <option value="50">50</option>
           </select>
         </div>
       </div>
 
-      <button class="save-settings-btn" id="saveSettingsBtn">設定を保存</button>
+      <button class="save-settings-btn" id="saveSettingsBtn" data-i18n="saveSettings">設定を保存</button>
 
       <div class="settings-section" style="margin-top: 20px; background: #fafafa; border: 1px solid #ddd;">
-        <h3>🔧 デバッグ情報</h3>
+        <h3 data-i18n="debugInfoSection">🔧 デバッグ情報</h3>
         <div id="debugInfo" style="font-size: 12px; line-height: 1.8; color: #666;"></div>
       </div>
 
       <!-- プラン管理セクション -->
       <div class="settings-section" style="margin-top: 20px;">
-        <h3>💳 プラン管理</h3>
+        <h3 data-i18n="planSection">💳 プラン管理</h3>
         <div id="planInfo" style="font-size: 13px; color: #666; line-height: 1.8;"></div>
         <div style="display: flex; gap: 8px; margin-top: 12px;">
-          <button id="changePlanBtn" class="save-settings-btn" style="flex: 1; background: #4a90d9;">プラン変更</button>
-          <button id="byokSetupBtn" class="save-settings-btn" style="flex: 1; background: #666;">BYOK設定</button>
+          <button id="changePlanBtn" class="save-settings-btn" style="flex: 1; background: #4a90d9;" data-i18n="changePlan">プラン変更</button>
+          <button id="byokSetupBtn" class="save-settings-btn" style="flex: 1; background: #666;" data-i18n="byokSetup">BYOK設定</button>
         </div>
       </div>
     </div>
@@ -351,17 +355,27 @@
 
   <!-- BYOK設定モーダル -->
   <div id="byokModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-    <div style="background: #fff; border-radius: 12px; padding: 24px; max-width: 90%; width: 400px; max-height: 80vh; overflow-y: auto;">
-      <h2 style="margin-bottom: 8px;">BYOK設定</h2>
-      <p style="font-size: 12px; color: #999; margin-bottom: 16px;">Google AI StudioのGemini APIキーを入力してください</p>
+    <div style="background: #fff; border-radius: 12px; padding: 24px; max-width: 90%; width: 420px; max-height: 80vh; overflow-y: auto;">
+      <h2 style="margin-bottom: 8px;" data-i18n="byokModalTitle">BYOK設定</h2>
+      <p style="font-size: 12px; color: #999; margin-bottom: 16px;" data-i18n="byokModalIntro">使用するプロバイダーを選び、APIキーを入力してください</p>
 
-      <input id="byokApiKeyInput" type="password" placeholder="AIzaSyD..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; font-size: 12px; font-family: monospace;">
+      <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;" data-i18n="byokProviderLabel">プロバイダー</label>
+      <select id="byokProviderSelect" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; font-size: 13px;">
+        <option value="mercury">Mercury-2（拡散モデル・爆速）</option>
+        <option value="gemini">Google Gemini（gemini-2.0-flash）</option>
+        <option value="openai">OpenAI（gpt-4o-mini）</option>
+      </select>
+
+      <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px;" data-i18n="byokApiKeyLabel">APIキー</label>
+      <input id="byokApiKeyInput" type="password" placeholder="sk-..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 12px; font-family: monospace;">
+
+      <div id="byokKeyHelp" style="font-size: 11px; color: #888; margin-bottom: 12px;"></div>
 
       <div id="byokStatus" style="font-size: 12px; margin-bottom: 12px; display: none;"></div>
 
       <div style="display: flex; gap: 8px;">
-        <button id="byokCancelBtn" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #fff;">キャンセル</button>
-        <button id="byokConfirmBtn" style="flex: 1; padding: 10px; background: #f57c00; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">保存</button>
+        <button id="byokCancelBtn" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #fff;" data-i18n="cancel">キャンセル</button>
+        <button id="byokConfirmBtn" style="flex: 1; padding: 10px; background: #f57c00; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;" data-i18n="validateAndSave">検証して保存</button>
       </div>
     </div>
   </div>
@@ -380,6 +394,7 @@
   </div>
 
   <div class="toast" id="toast"></div>
+  <script src="i18n.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

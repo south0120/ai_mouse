@@ -1,15 +1,68 @@
 let popup = null;
 const MAX_INPUT_LENGTH = 200;
 
+// 現在のUI言語（保存設定から取得、変更を監視）
+let uiT = (typeof getI18n === "function" ? getI18n("ja") : null);
+chrome.storage.sync.get({ uiLang: "ja" }, (d) => {
+  uiT = getI18n(d.uiLang);
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.uiLang) {
+    uiT = getI18n(changes.uiLang.newValue);
+  }
+});
+
 function removePopup() {
   if (popup) {
+    if (popup._resizeObserver) popup._resizeObserver.disconnect();
     popup.remove();
     popup = null;
   }
 }
 
+function adjustPopupPosition(el, anchorRect) {
+  // maxWidthをビューポートに合わせて再計算
+  const margin = 8;
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+  const cap = Math.min(400, viewportW - margin * 2);
+  el.style.maxWidth = `${cap}px`;
+
+  const popupRect = el.getBoundingClientRect();
+
+  // 縦：上にはみ出すなら下側へ
+  if (popupRect.top < margin) {
+    el.style.top = `${anchorRect.bottom + margin}px`;
+    el.style.transform = "translateX(-50%)";
+  }
+
+  // 縦：下にもはみ出すならビューポート内に強制
+  const reRect = el.getBoundingClientRect();
+  if (reRect.bottom > viewportH - margin) {
+    const newTop = Math.max(margin, viewportH - margin - reRect.height);
+    el.style.top = `${newTop}px`;
+    el.style.transform = el.style.transform.replace("translateY(-100%)", "");
+  }
+
+  // 横：左にはみ出す
+  const horizRect = el.getBoundingClientRect();
+  if (horizRect.left < margin) {
+    el.style.left = `${margin}px`;
+    el.style.right = "auto";
+    el.style.transform = el.style.transform.replace("translateX(-50%)", "");
+  }
+  // 横：右にはみ出す
+  const horizRect2 = el.getBoundingClientRect();
+  if (horizRect2.right > viewportW - margin) {
+    el.style.left = "auto";
+    el.style.right = `${margin}px`;
+    el.style.transform = el.style.transform.replace("translateX(-50%)", "");
+  }
+}
+
 function createPopup(rect) {
   const el = document.createElement("div");
+  el._anchorRect = rect;
   Object.assign(el.style, {
     position: "fixed",
     left: `${rect.left + rect.width / 2}px`,
@@ -22,29 +75,24 @@ function createPopup(rect) {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     zIndex: "2147483647",
     boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
-    maxWidth: "400px",
+    maxWidth: `${Math.min(400, window.innerWidth - 16)}px`,
     minWidth: "120px",
     overflow: "hidden",
+    boxSizing: "border-box",
   });
   document.documentElement.appendChild(el);
 
-  // 画面外にはみ出す場合の補正
-  requestAnimationFrame(() => {
-    const popupRect = el.getBoundingClientRect();
-    if (popupRect.top < 4) {
-      el.style.top = `${rect.bottom + 8}px`;
-      el.style.transform = "translateX(-50%)";
-    }
-    if (popupRect.left < 4) {
-      el.style.left = "8px";
-      el.style.transform = el.style.transform.replace("translateX(-50%)", "");
-    }
-    if (popupRect.right > window.innerWidth - 4) {
-      el.style.left = "auto";
-      el.style.right = "8px";
-      el.style.transform = el.style.transform.replace("translateX(-50%)", "");
+  // 初回補正
+  requestAnimationFrame(() => adjustPopupPosition(el, rect));
+
+  // コンテンツ変化を監視して再補正
+  const observer = new ResizeObserver(() => {
+    if (el.isConnected && el._anchorRect) {
+      adjustPopupPosition(el, el._anchorRect);
     }
   });
+  observer.observe(el);
+  el._resizeObserver = observer;
 
   return el;
 }
@@ -76,7 +124,31 @@ function createModeButton(label, color, disabled) {
   return btn;
 }
 
-function handleAIQuery(text, mode, popup) {
+function showCompletionBadge(toolbar, mode, isError) {
+  toolbar.replaceChildren();
+  Object.assign(toolbar.style, {
+    justifyContent: "flex-start",
+  });
+
+  const badge = document.createElement("span");
+  Object.assign(badge.style, {
+    fontSize: "12px",
+    fontWeight: "600",
+    color: isError ? "#f88" : "#7ed957",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+  });
+  const labels = uiT || getI18n("ja");
+  if (isError) {
+    badge.textContent = mode === "translate" ? labels.translateFailed : labels.searchFailed;
+  } else {
+    badge.textContent = mode === "translate" ? labels.translateDone : labels.searchDone;
+  }
+  toolbar.appendChild(badge);
+}
+
+function handleAIQuery(text, mode, popup, toolbar) {
   // 結果表示エリア
   let resultArea = popup.querySelector(".ai-result");
   if (!resultArea) {
@@ -95,7 +167,8 @@ function handleAIQuery(text, mode, popup) {
     });
     popup.appendChild(resultArea);
   }
-  resultArea.textContent = "読み込み中...";
+  const labels = uiT || getI18n("ja");
+  resultArea.textContent = labels.loading;
   resultArea.style.color = "#ddd";
 
   chrome.storage.sync.get({ outputLang: "ja" }, (settings) => {
@@ -103,16 +176,18 @@ function handleAIQuery(text, mode, popup) {
       { type: "queryAI", text, mode, outputLang: settings.outputLang },
       (res) => {
         if (chrome.runtime.lastError) {
-          resultArea.textContent = "エラー: 拡張機能との通信に失敗しました";
+          resultArea.textContent = labels.commError;
           resultArea.style.color = "#f88";
+          if (toolbar) showCompletionBadge(toolbar, mode, true);
         } else if (res.error) {
           resultArea.textContent = res.error;
           resultArea.style.color = "#f88";
+          if (toolbar) showCompletionBadge(toolbar, mode, true);
 
           // 無料枠超過時：アップグレードボタン表示
-          if (res.error.includes("無料枠") || res.error.includes("月間クレジット")) {
+          if (res.error.includes("無料枠") || res.error.includes("月間クレジット") || /quota|monthly credit/i.test(res.error)) {
             const actionBtn = document.createElement("button");
-            actionBtn.textContent = "Proにアップグレード";
+            actionBtn.textContent = labels.upgradeToPro;
             Object.assign(actionBtn.style, {
               marginTop: "8px",
               width: "100%",
@@ -133,6 +208,7 @@ function handleAIQuery(text, mode, popup) {
         } else {
           resultArea.textContent = res.answer;
           resultArea.style.color = "#ddd";
+          if (toolbar) showCompletionBadge(toolbar, mode, false);
 
           // 残り回数を表示
           if (res.remaining !== undefined) {
@@ -143,7 +219,7 @@ function handleAIQuery(text, mode, popup) {
               marginTop: "6px",
               textAlign: "right",
             });
-            remainTag.textContent = `残り ${res.remaining} 回 / ${res.plan === "free" ? "今日" : "月間"}`;
+            remainTag.textContent = labels.remainingFmt({ remaining: res.remaining, plan: res.plan });
             resultArea.appendChild(remainTag);
           }
 
@@ -156,7 +232,7 @@ function handleAIQuery(text, mode, popup) {
               marginTop: "3px",
               textAlign: "right",
             });
-            creditTag.textContent = `消費: ${res.creditUsed} クレジット`;
+            creditTag.textContent = labels.creditUsed(res.creditUsed);
             resultArea.appendChild(creditTag);
           }
         }
@@ -190,16 +266,20 @@ document.addEventListener("mouseup", (e) => {
     gap: "8px",
   });
 
-  // 文字数カウント
+  // 文字数（英語UIのときはワード数も併記）
   const counter = document.createElement("span");
-  counter.textContent = `${text.length} 文字`;
+  const labels = uiT || getI18n("ja");
+  counter.textContent = labels.countLabel({
+    chars: text.length,
+    words: countWords(text),
+  });
   Object.assign(counter.style, {
     fontSize: "11px",
     color: overLimit ? "#f88" : "#aaa",
     whiteSpace: "nowrap",
   });
   if (overLimit) {
-    counter.textContent += ` (上限${MAX_INPUT_LENGTH})`;
+    counter.textContent += labels.overLimitSuffix(MAX_INPUT_LENGTH);
   }
 
   // ボタンコンテナ
@@ -210,27 +290,27 @@ document.addEventListener("mouseup", (e) => {
   });
 
   // 辞書ボタン
-  const dictBtn = createModeButton("辞書", "#4a90d9", overLimit);
+  const dictBtn = createModeButton(labels.dict, "#4a90d9", overLimit);
   dictBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
     if (overLimit) return;
     dictBtn.disabled = true;
     transBtn.disabled = true;
-    dictBtn.textContent = "検索中...";
+    dictBtn.textContent = labels.searching;
     dictBtn.style.background = "#666";
-    handleAIQuery(text, "dictionary", popup);
+    handleAIQuery(text, "dictionary", popup, toolbar);
   });
 
   // 翻訳ボタン
-  const transBtn = createModeButton("翻訳", "#3cb371", overLimit);
+  const transBtn = createModeButton(labels.translate, "#3cb371", overLimit);
   transBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
     if (overLimit) return;
     transBtn.disabled = true;
     dictBtn.disabled = true;
-    transBtn.textContent = "翻訳中...";
+    transBtn.textContent = labels.translating;
     transBtn.style.background = "#666";
-    handleAIQuery(text, "translate", popup);
+    handleAIQuery(text, "translate", popup, toolbar);
   });
 
   btnGroup.appendChild(dictBtn);

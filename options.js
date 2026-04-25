@@ -1,5 +1,7 @@
 const providerEl = document.getElementById("provider");
 const apiKeyEl = document.getElementById("apiKey");
+const apiKeyField = document.getElementById("apiKeyField");
+const apiKeyLink = document.getElementById("apiKeyLink");
 const providerInfo = document.getElementById("providerInfo");
 const saveBtn = document.getElementById("saveBtn");
 const testBtn = document.getElementById("testBtn");
@@ -35,17 +37,40 @@ const INFO = {
 };
 
 // プロバイダー情報表示
+function renderProviderInfo(info) {
+  providerInfo.replaceChildren();
+  const modelLine = document.createElement("div");
+  modelLine.append("使用モデル: ");
+  const code = document.createElement("code");
+  code.textContent = info.model;
+  modelLine.append(code);
+  const noteLine = document.createElement("div");
+  noteLine.textContent = info.note;
+  providerInfo.append(modelLine, noteLine);
+}
+
+function renderApiKeyLink(info) {
+  apiKeyLink.replaceChildren();
+  if (!info.url) return;
+  apiKeyLink.append("APIキー取得: ");
+  const a = document.createElement("a");
+  a.href = info.url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = info.url;
+  apiKeyLink.append(a);
+}
+
 providerEl.addEventListener("change", () => {
   const info = INFO[providerEl.value];
   if (info) {
-    providerInfo.innerHTML =
-      `使用モデル: <code>${info.model}</code><br>${info.note}`;
+    renderProviderInfo(info);
     if (info.noKey) {
-      apiKeyEl.style.display = "none";
-      apiKeyEl.previousElementSibling.style.display = "none"; // desc
+      apiKeyField.style.display = "none";
+      apiKeyLink.replaceChildren();
     } else {
-      apiKeyEl.style.display = "";
-      apiKeyEl.previousElementSibling.style.display = "";
+      apiKeyField.style.display = "";
+      renderApiKeyLink(info);
     }
     // Load correct key
     if (providerEl.value === "mercury") {
@@ -54,13 +79,14 @@ providerEl.addEventListener("change", () => {
       chrome.storage.sync.get({ apiKey: "" }, (d) => { apiKeyEl.value = d.apiKey; });
     }
   } else {
-    providerInfo.innerHTML = "";
+    providerInfo.replaceChildren();
+    apiKeyField.style.display = "none";
   }
 });
 
 // 設定を読み込み
-chrome.storage.sync.get({ aiProvider: "cloud", provider: "", apiKey: "", mercuryApiKey: "" }, (data) => {
-  providerEl.value = data.aiProvider || data.provider || "cloud";
+chrome.storage.sync.get({ aiProvider: "mercury", provider: "", apiKey: "", mercuryApiKey: "" }, (data) => {
+  providerEl.value = data.aiProvider || data.provider || "mercury";
   if (providerEl.value === "mercury") {
     apiKeyEl.value = data.mercuryApiKey;
   } else {
