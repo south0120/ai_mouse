@@ -124,10 +124,11 @@ function createModeButton(label, color, disabled) {
   return btn;
 }
 
-function showCompletionBadge(toolbar, mode, isError) {
+function showCompletionBadge(toolbar, mode, isError, payload) {
   toolbar.replaceChildren();
   Object.assign(toolbar.style, {
-    justifyContent: "flex-start",
+    justifyContent: "space-between",
+    alignItems: "center",
   });
 
   const badge = document.createElement("span");
@@ -146,6 +147,41 @@ function showCompletionBadge(toolbar, mode, isError) {
     badge.textContent = mode === "translate" ? labels.translateDone : labels.searchDone;
   }
   toolbar.appendChild(badge);
+
+  // 辞書モード成功時は単語帳追加ボタンを併置
+  if (!isError && mode === "dictionary" && payload) {
+    const saveBtn = document.createElement("button");
+    saveBtn.textContent = labels.addToVocab;
+    Object.assign(saveBtn.style, {
+      background: "#f5b50a",
+      color: "#1a1a2e",
+      border: "none",
+      borderRadius: "5px",
+      padding: "4px 10px",
+      fontSize: "11px",
+      fontWeight: "700",
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    });
+    saveBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      saveBtn.disabled = true;
+      chrome.runtime.sendMessage(
+        { type: "addVocab", payload },
+        (res) => {
+          if (res?.error) {
+            saveBtn.disabled = false;
+            saveBtn.style.background = "#f88";
+            saveBtn.textContent = res.error;
+          } else {
+            saveBtn.style.background = "#7ed957";
+            saveBtn.textContent = labels.addedToVocab;
+          }
+        }
+      );
+    });
+    toolbar.appendChild(saveBtn);
+  }
 }
 
 function handleAIQuery(text, mode, popup, toolbar) {
@@ -208,7 +244,12 @@ function handleAIQuery(text, mode, popup, toolbar) {
         } else {
           resultArea.textContent = res.answer;
           resultArea.style.color = "#ddd";
-          if (toolbar) showCompletionBadge(toolbar, mode, false);
+          const vocabPayload = {
+            sourceInput: text,
+            answer: res.answer,
+            outputLang: settings.outputLang || "ja",
+          };
+          if (toolbar) showCompletionBadge(toolbar, mode, false, vocabPayload);
 
           // 残り回数を表示
           if (res.remaining !== undefined) {

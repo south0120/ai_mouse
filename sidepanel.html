@@ -237,6 +237,7 @@
 
     <div class="tabs" id="tabBar">
       <div class="tab active" data-tab="history" data-i18n="tabHistory">履歴</div>
+      <div class="tab" data-tab="vocab" data-i18n="tabVocab">単語帳</div>
       <div class="tab" data-tab="settings" data-i18n="tabSettings">設定</div>
     </div>
 
@@ -244,6 +245,25 @@
     <div id="historyTab" class="content">
       <ul class="history-list" id="historyList"></ul>
       <div class="empty-state hidden" id="emptyState" data-i18n="noHistory">まだ履歴がありません</div>
+    </div>
+
+    <!-- 単語帳タブ -->
+    <div id="vocabTab" class="content hidden">
+      <div id="vocabLockedState" class="hidden" style="padding:24px 16px; text-align:center; color:#666;">
+        <div style="font-size:32px; margin-bottom:8px;">🔒</div>
+        <div style="font-weight:600; margin-bottom:6px;" data-i18n="vocabLockedTitle">単語帳は有料プランの機能です</div>
+        <div style="font-size:12px; margin-bottom:16px; line-height:1.6;" data-i18n="vocabLockedNote">Pro / Pro+ / BYOK プランで単語帳の保存・エクスポートが可能になります</div>
+        <button id="vocabUpgradeBtn" class="save-settings-btn" style="background:#4a90d9;" data-i18n="vocabUpgradeBtn">プランをアップグレード</button>
+      </div>
+      <div id="vocabUnlockedState">
+        <div style="display:flex; gap:8px; padding:8px 12px; border-bottom:1px solid #eee; background:#fafafa;">
+          <input id="vocabSearch" type="text" placeholder="検索…" style="flex:1; padding:6px 10px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+          <button id="vocabExportCsvBtn" class="save-settings-btn" style="background:#4a90d9; padding:6px 10px; font-size:12px; flex:0 0 auto; width:auto;" data-i18n="exportCsv">CSV</button>
+          <button id="vocabExportAnkiBtn" class="save-settings-btn" style="background:#666; padding:6px 10px; font-size:12px; flex:0 0 auto; width:auto;" data-i18n="exportAnki">Anki</button>
+        </div>
+        <ul class="history-list" id="vocabList"></ul>
+        <div class="empty-state hidden" id="vocabEmptyState" data-i18n="vocabEmpty">まだ単語帳に追加された語がありません。検索結果から「★ 単語帳へ」をタップしてください</div>
+      </div>
     </div>
 
     <!-- 設定タブ -->

@@ -48,6 +48,7 @@ function showToast(message, type) {
 }
 
 // ====== タブ切り替え ======
+const vocabTabEl = document.getElementById("vocabTab");
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
@@ -56,6 +57,9 @@ document.querySelectorAll(".tab").forEach((tab) => {
     const target = tab.dataset.tab;
     historyTab.classList.toggle("hidden", target !== "history");
     settingsTab.classList.toggle("hidden", target !== "settings");
+    vocabTabEl.classList.toggle("hidden", target !== "vocab");
+
+    if (target === "vocab") renderVocab();
   });
 });
 
@@ -225,6 +229,10 @@ function applyI18n(lang) {
 
   // BYOKボタンのtooltip更新
   if (typeof updateByokButtonState === "function") updateByokButtonState();
+
+  // 単語帳検索プレースホルダー
+  const vs = document.getElementById("vocabSearch");
+  if (vs) vs.placeholder = t.vocabSearchPlaceholder;
 }
 
 // ====== 設定 ======
@@ -362,6 +370,7 @@ async function loadPlanInfo() {
   planInfo.appendChild(wrap);
 
   updateByokButtonState();
+  if (vocabTabEl && !vocabTabEl.classList.contains("hidden")) renderVocab();
 }
 
 changePlanBtn.addEventListener("click", () => {
@@ -535,6 +544,175 @@ upsellUpgradeBtn.addEventListener("click", () => {
 upsellDismissBtn.addEventListener("click", () => {
   upsellModal.classList.add("hidden");
 });
+
+// ====== 単語帳 ======
+const vocabList = document.getElementById("vocabList");
+const vocabEmptyState = document.getElementById("vocabEmptyState");
+const vocabLockedState = document.getElementById("vocabLockedState");
+const vocabUnlockedState = document.getElementById("vocabUnlockedState");
+const vocabSearch = document.getElementById("vocabSearch");
+const vocabExportCsvBtn = document.getElementById("vocabExportCsvBtn");
+const vocabExportAnkiBtn = document.getElementById("vocabExportAnkiBtn");
+const vocabUpgradeBtn = document.getElementById("vocabUpgradeBtn");
+
+function isPaidPlan() {
+  return currentPlan === "pro" || currentPlan === "pro_plus" || currentPlan === "byok";
+}
+
+async function getVocab() {
+  const data = await chrome.storage.local.get({ vocabulary: [] });
+  return data.vocabulary;
+}
+
+async function setVocab(items) {
+  await chrome.storage.local.set({ vocabulary: items });
+}
+
+async function renderVocab() {
+  // プランチェック
+  if (!isPaidPlan()) {
+    vocabLockedState.classList.remove("hidden");
+    vocabUnlockedState.classList.add("hidden");
+    return;
+  }
+  vocabLockedState.classList.add("hidden");
+  vocabUnlockedState.classList.remove("hidden");
+
+  const items = await getVocab();
+  const q = (vocabSearch.value || "").trim().toLowerCase();
+  const filtered = q
+    ? items.filter((it) =>
+        (it.headword || "").toLowerCase().includes(q) ||
+        (it.definition || "").toLowerCase().includes(q)
+      )
+    : items;
+
+  vocabList.replaceChildren();
+  if (filtered.length === 0) {
+    vocabEmptyState.classList.remove("hidden");
+    return;
+  }
+  vocabEmptyState.classList.add("hidden");
+
+  filtered.forEach((it) => {
+    const li = document.createElement("li");
+    li.className = "history-item";
+
+    const head = document.createElement("div");
+    head.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px;";
+    const headword = document.createElement("div");
+    headword.style.cssText = "font-weight:600; font-size:14px; flex:1;";
+    headword.textContent = it.headword;
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "×";
+    removeBtn.title = t.vocabRemoveBtn;
+    removeBtn.style.cssText = "background:transparent; border:none; color:#999; cursor:pointer; font-size:18px; padding:0 6px;";
+    removeBtn.addEventListener("click", async () => {
+      const list = await getVocab();
+      const idx = list.findIndex((x) => x.id === it.id);
+      if (idx >= 0) {
+        list.splice(idx, 1);
+        await setVocab(list);
+        showToast(t.vocabRemoved, "success");
+        renderVocab();
+      }
+    });
+    head.append(headword, removeBtn);
+
+    const meta = document.createElement("div");
+    meta.style.cssText = "font-size:11px; color:#888; margin:2px 0;";
+    meta.textContent = [it.pos, it.outputLang].filter(Boolean).join(" · ");
+
+    const def = document.createElement("div");
+    def.className = "history-output";
+    def.textContent = it.definition || "";
+
+    const time = document.createElement("div");
+    time.className = "history-time";
+    if (it.savedAt) {
+      const d = new Date(it.savedAt);
+      time.textContent = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }
+
+    li.append(head, meta, def, time);
+    vocabList.appendChild(li);
+  });
+}
+
+vocabSearch.addEventListener("input", renderVocab);
+vocabUpgradeBtn.addEventListener("click", () => {
+  changePlanBtn.click();
+});
+
+// CSVエスケープ
+function csvEscape(s) {
+  const str = String(s ?? "");
+  if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  return str;
+}
+
+// CSVエクスポート
+vocabExportCsvBtn.addEventListener("click", async () => {
+  if (!isPaidPlan()) {
+    showToast(t.vocabRequiresPaid, "error");
+    return;
+  }
+  const items = await getVocab();
+  if (items.length === 0) {
+    showToast(t.vocabExportEmpty, "error");
+    return;
+  }
+  const header = "headword,part_of_speech,definition,example,output_language,source_input,saved_at\n";
+  const rows = items.map((it) =>
+    [
+      csvEscape(it.headword),
+      csvEscape(it.pos),
+      csvEscape(it.definition),
+      csvEscape(it.example),
+      csvEscape(it.outputLang),
+      csvEscape(it.sourceInput),
+      csvEscape(it.savedAt ? new Date(it.savedAt).toISOString() : ""),
+    ].join(",")
+  );
+  const csv = "﻿" + header + rows.join("\n");
+  downloadFile("ai-mouse-vocabulary.csv", "text/csv;charset=utf-8", csv);
+});
+
+// Anki TSVエクスポート（front=headword, back=definition + example）
+vocabExportAnkiBtn.addEventListener("click", async () => {
+  if (!isPaidPlan()) {
+    showToast(t.vocabRequiresPaid, "error");
+    return;
+  }
+  const items = await getVocab();
+  if (items.length === 0) {
+    showToast(t.vocabExportEmpty, "error");
+    return;
+  }
+  const lines = items.map((it) => {
+    const front = it.headword || "";
+    const backParts = [];
+    if (it.pos) backParts.push(`<i>${escapeHtml(it.pos)}</i>`);
+    if (it.definition) backParts.push(escapeHtml(it.definition));
+    if (it.example) backParts.push(`<small>${escapeHtml(it.example)}</small>`);
+    const back = backParts.join("<br>");
+    // タブと改行をエスケープ
+    return `${front.replace(/\t/g, " ")}\t${back.replace(/\t/g, " ").replace(/\n/g, "<br>")}`;
+  });
+  downloadFile("ai-mouse-anki.tsv", "text/tab-separated-values;charset=utf-8", lines.join("\n"));
+});
+
+function downloadFile(name, mime, content) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 // ====== 初期化 ======
 async function init() {

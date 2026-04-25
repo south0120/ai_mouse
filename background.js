@@ -623,7 +623,99 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     });
     return true;
   }
+
+  if (msg.type === "addVocab") {
+    (async () => {
+      try {
+        // プランチェック
+        const planRes = await new Promise((resolve) => {
+          getFirebaseIdToken()
+            .then((idToken) =>
+              fetch(`${API_BASE}/getSubscriptionStatus`, {
+                headers: { Authorization: `Bearer ${idToken}` },
+              })
+                .then((r) => r.json())
+                .then(resolve)
+                .catch(() => resolve({ plan: "free" }))
+            )
+            .catch(() => resolve({ plan: "free" }));
+        });
+        const plan = planRes.plan || "free";
+        if (plan !== "pro" && plan !== "pro_plus" && plan !== "byok") {
+          sendResponse({ error: "有料プランが必要です" });
+          return;
+        }
+
+        const entries = parseDictionaryAnswer(msg.payload.answer);
+        if (entries.length === 0) {
+          sendResponse({ error: "保存対象の語が見つかりませんでした" });
+          return;
+        }
+
+        const data = await chrome.storage.local.get({ vocabulary: [] });
+        const list = data.vocabulary;
+        const now = Date.now();
+        entries.forEach((e, i) => {
+          list.unshift({
+            id: `${now}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+            headword: e.headword,
+            pos: e.pos,
+            definition: e.definition,
+            example: e.example,
+            outputLang: msg.payload.outputLang,
+            sourceInput: msg.payload.sourceInput,
+            savedAt: now,
+          });
+        });
+        // 上限5000件
+        if (list.length > 5000) list.length = 5000;
+        await chrome.storage.local.set({ vocabulary: list });
+        sendResponse({ success: true, added: entries.length });
+      } catch (e) {
+        sendResponse({ error: e.message });
+      }
+    })();
+    return true;
+  }
 });
+
+// 辞書ブロック形式の回答をパース
+function parseDictionaryAnswer(text) {
+  if (!text) return [];
+  const lines = text.split(/\r?\n/);
+  const blocks = [];
+  let cur = null;
+  // 「品詞 / Part of speech / 词性 / 품사 / Categoría / Nature」
+  const posRe = /^\s*(?:品詞|词性|품사|Part of speech|Categoría|Nature)\s*[:：]\s*(.+)$/i;
+  // 「意味 / Meaning / 释义 / 의미 / Significado / Sens」
+  const meaningRe = /^\s*(?:意味|释义|의미|Meaning|Significado|Sens)\s*[:：]\s*(.+)$/i;
+  // 「用例 / Example / 例句 / 예문 / Ejemplo / Exemple」
+  const exampleRe = /^\s*(?:用例|例句|예문|Example|Ejemplo|Exemple)\s*[:：]\s*(.+)$/i;
+  // 見出し行: 行頭の「■」または箇条書き記号
+  const headRe = /^\s*[■◆●・-]\s*(.+?)\s*$/;
+
+  for (const line of lines) {
+    const h = line.match(headRe);
+    if (h) {
+      if (cur && cur.headword) blocks.push(cur);
+      cur = { headword: h[1].trim(), pos: "", definition: "", example: "" };
+      continue;
+    }
+    if (!cur) continue;
+    const p = line.match(posRe);
+    if (p) { cur.pos = p[1].trim(); continue; }
+    const m = line.match(meaningRe);
+    if (m) { cur.definition = m[1].trim(); continue; }
+    const e = line.match(exampleRe);
+    if (e) { cur.example = e[1].trim(); continue; }
+    // ブロック内の継続行は意味に追記
+    if (cur.definition && line.trim() && !line.match(/^[■◆●・]/)) {
+      cur.definition += " " + line.trim();
+    }
+  }
+  if (cur && cur.headword) blocks.push(cur);
+  return blocks;
+}
 
 // ====== 履歴管理 ======
 async function saveHistory(input, output, mode) {
