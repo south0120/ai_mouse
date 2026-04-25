@@ -63,8 +63,58 @@ document.querySelectorAll(".tab").forEach((tab) => {
   });
 });
 
-document.getElementById("settingsToggle").addEventListener("click", () => {
-  document.querySelector('[data-tab="settings"]').click();
+// ====== ヘッダーUI ======
+const headerSignInBtn = document.getElementById("headerSignInBtn");
+const headerUser = document.getElementById("headerUser");
+const headerUserEmail = document.getElementById("headerUserEmail");
+
+function setHeaderIcons() {
+  // Googleアイコン
+  const gIconHost = headerSignInBtn?.querySelector(".header-google-icon");
+  if (gIconHost) {
+    gIconHost.replaceChildren(createSvgIcon("google", 16));
+  }
+  // ユーザーアイコン
+  const uIconHost = headerUser?.querySelector(".header-user-icon");
+  if (uIconHost) {
+    uIconHost.replaceChildren(createSvgIcon("user", 16));
+  }
+  // ログアウトボタン
+  if (logoutBtn) {
+    logoutBtn.replaceChildren(createSvgIcon("logout", 16));
+  }
+  // 単語帳ロックアイコン
+  const lockHost = document.getElementById("vocabLockIcon");
+  if (lockHost) {
+    lockHost.replaceChildren(createSvgIcon("lock", 36));
+  }
+}
+
+function updateHeaderForAuth(isLoggedIn, email) {
+  if (isLoggedIn && email) {
+    // Googleログイン済み
+    headerSignInBtn.classList.add("hidden");
+    headerUser.classList.remove("hidden");
+    logoutBtn.classList.remove("hidden");
+    headerUserEmail.textContent = email;
+    headerUserEmail.title = `${t.signedInAs} ${email}`;
+  } else if (email) {
+    // 匿名モード（emailは "匿名ユーザー" 等）
+    headerSignInBtn.classList.remove("hidden");
+    headerUser.classList.remove("hidden");
+    logoutBtn.classList.add("hidden");
+    headerUserEmail.textContent = email;
+    headerUserEmail.title = email;
+  } else {
+    // 未ログイン
+    headerSignInBtn.classList.remove("hidden");
+    headerUser.classList.add("hidden");
+    logoutBtn.classList.add("hidden");
+  }
+}
+
+headerSignInBtn?.addEventListener("click", () => {
+  loginBtn.click();
 });
 
 // ====== 認証 ======
@@ -75,6 +125,12 @@ async function checkAuth() {
         console.error("checkAuth error:", chrome.runtime.lastError);
       }
       console.log("Auth check result:", res);
+      if (res?.loggedIn) {
+        loggedIn = true;
+        if (res.email) userEmail.textContent = res.email;
+      } else {
+        loggedIn = false;
+      }
       resolve(res?.loggedIn || false);
     });
   });
@@ -88,19 +144,26 @@ function showAuth() {
 function showMain() {
   authScreen.classList.add("hidden");
   mainApp.classList.remove("hidden");
-  logoutBtn.style.display = loggedIn ? "inline-flex" : "none";
+  const stored = userEmail.textContent && userEmail.textContent !== "-" ? userEmail.textContent : "";
+  if (loggedIn) {
+    updateHeaderForAuth(true, stored);
+  } else if (stored === t.anonymousUser || stored === "匿名ユーザー" || stored === "Anonymous") {
+    updateHeaderForAuth(false, t.anonymousUser);
+  } else {
+    updateHeaderForAuth(false, "");
+  }
 }
 
 loginBtn.addEventListener("click", () => {
-  loginBtn.textContent = "ログイン中...";
+  loginBtn.textContent = t.signingIn;
   loginBtn.disabled = true;
 
   chrome.runtime.sendMessage({ type: "signIn" }, (res) => {
-    loginBtn.textContent = "Googleでログイン";
+    loginBtn.textContent = t.signInGoogle;
     loginBtn.disabled = false;
 
     if (chrome.runtime.lastError) {
-      const errMsg = `通信エラー: ${chrome.runtime.lastError.message}`;
+      const errMsg = `${currentLang === "en" ? "Communication error" : "通信エラー"}: ${chrome.runtime.lastError.message}`;
       console.error("signIn error:", errMsg);
       showToast(errMsg, "error");
     } else if (res?.error) {
@@ -109,16 +172,19 @@ loginBtn.addEventListener("click", () => {
     } else if (res?.success) {
       loggedIn = true;
       userEmail.textContent = res.user.email;
+      updateHeaderForAuth(true, res.user.email);
       showMain();
       loadUsage();
       loadHistory();
+      if (typeof loadPlanInfo === "function") loadPlanInfo();
     }
   });
 });
 
 anonymousBtn.addEventListener("click", () => {
   loggedIn = false;
-  userEmail.textContent = "匿名ユーザー";
+  userEmail.textContent = t.anonymousUser;
+  updateHeaderForAuth(false, t.anonymousUser);
   showMain();
   loadUsage();
   loadHistory();
@@ -127,6 +193,8 @@ anonymousBtn.addEventListener("click", () => {
 logoutBtn.addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "signOut" }, () => {
     loggedIn = false;
+    userEmail.textContent = "-";
+    updateHeaderForAuth(false, "");
     showAuth();
   });
 });
@@ -136,6 +204,9 @@ function loadUsage() {
   chrome.runtime.sendMessage({ type: "getUsage" }, (res) => {
     if (res && !res.error) {
       usageBadge.textContent = `${res.used} / ${res.limit}`;
+      usageBadge.classList.remove("hidden");
+    } else {
+      usageBadge.classList.add("hidden");
     }
   });
 }
@@ -233,6 +304,12 @@ function applyI18n(lang) {
   // 単語帳検索プレースホルダー
   const vs = document.getElementById("vocabSearch");
   if (vs) vs.placeholder = t.vocabSearchPlaceholder;
+
+  // 匿名表示の即時翻訳
+  if (!loggedIn && headerUserEmail && headerUserEmail.textContent &&
+      (headerUserEmail.textContent === "匿名ユーザー" || headerUserEmail.textContent === "Anonymous")) {
+    headerUserEmail.textContent = t.anonymousUser;
+  }
 }
 
 // ====== 設定 ======
@@ -295,7 +372,7 @@ async function showDebugInfo() {
       <div>• API Base: ${debugRes.debug?.apiBase || 'unknown'}</div>
       <div>• Firebase API Key: ${debugRes.debug?.firebaseApiKey || 'unknown'}</div>
       <div style="margin-top: 8px;"><strong>ログイン状態:</strong></div>
-      <div>• ログイン済み: ${debugRes.loggedIn ? 'はい ✓' : 'いいえ'}</div>
+      <div>• ログイン済み: ${debugRes.loggedIn ? 'はい' : 'いいえ'}</div>
       ${debugRes.error ? `<div style="color: red;">• エラー: ${debugRes.error}</div>` : ''}
       <div style="margin-top: 8px; font-size: 11px; color: #999;">
         設定が「未設定」の場合、background.jsを確認してください。
@@ -730,11 +807,12 @@ function downloadFile(name, mime, content) {
 
 // ====== 初期化 ======
 async function init() {
+  setHeaderIcons();
   loadSettings();
   await showDebugInfo();
 
-  const loggedIn = await checkAuth();
-  if (loggedIn) {
+  const isLoggedIn = await checkAuth();
+  if (isLoggedIn) {
     showMain();
     loadUsage();
     loadHistory();

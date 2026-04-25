@@ -512,13 +512,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       apiBase: API_BASE.includes("YOUR_") ? "未設定" : "設定済み",
       firebaseApiKey: FIREBASE_API_KEY.includes("YOUR_") ? "未設定" : "設定済み"
     };
-    
+
     getFirebaseIdToken()
-      .then(() => sendResponse({ loggedIn: true, debug }))
-      .catch((err) => sendResponse({ 
-        loggedIn: false, 
+      .then((idToken) => {
+        let email = "";
+        try {
+          const payload = JSON.parse(atob(idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+          email = payload.email || "";
+        } catch (_) {}
+        sendResponse({ loggedIn: true, email, debug });
+      })
+      .catch((err) => sendResponse({
+        loggedIn: false,
         debug,
-        error: err.message 
+        error: err.message
       }));
     return true;
   }

@@ -141,11 +141,14 @@ function showCompletionBadge(toolbar, mode, isError, payload) {
     gap: "4px",
   });
   const labels = uiT || getI18n("ja");
+  badge.appendChild(createSvgIcon(isError ? "cross" : "check", 14));
+  const txt = document.createElement("span");
   if (isError) {
-    badge.textContent = mode === "translate" ? labels.translateFailed : labels.searchFailed;
+    txt.textContent = mode === "translate" ? labels.translateFailed : labels.searchFailed;
   } else {
-    badge.textContent = mode === "translate" ? labels.translateDone : labels.searchDone;
+    txt.textContent = mode === "translate" ? labels.translateDone : labels.searchDone;
   }
+  badge.appendChild(txt);
   toolbar.appendChild(badge);
 
   // 辞書モード成功時は単語帳追加ボタンを併置
@@ -163,6 +166,16 @@ function showCompletionBadge(toolbar, mode, isError, payload) {
       cursor: "pointer",
       whiteSpace: "nowrap",
     });
+    saveBtn.style.display = "inline-flex";
+    saveBtn.style.alignItems = "center";
+    saveBtn.style.gap = "4px";
+    // SVGスター
+    saveBtn.replaceChildren();
+    saveBtn.appendChild(createSvgIcon("starOutline", 12));
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = labels.addToVocab;
+    saveBtn.appendChild(labelSpan);
+
     saveBtn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       saveBtn.disabled = true;
@@ -172,10 +185,17 @@ function showCompletionBadge(toolbar, mode, isError, payload) {
           if (res?.error) {
             saveBtn.disabled = false;
             saveBtn.style.background = "#f88";
-            saveBtn.textContent = res.error;
+            saveBtn.replaceChildren();
+            const errSpan = document.createElement("span");
+            errSpan.textContent = res.error;
+            saveBtn.appendChild(errSpan);
           } else {
             saveBtn.style.background = "#7ed957";
-            saveBtn.textContent = labels.addedToVocab;
+            saveBtn.replaceChildren();
+            saveBtn.appendChild(createSvgIcon("star", 12));
+            const okSpan = document.createElement("span");
+            okSpan.textContent = labels.addedToVocab;
+            saveBtn.appendChild(okSpan);
           }
         }
       );
