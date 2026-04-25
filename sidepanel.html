@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>AI辞書</title>
+  <title>AI-dictionary</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -248,7 +248,7 @@
 <body>
   <!-- 認証前画面 -->
   <div id="authScreen" class="auth-screen">
-    <h1 style="margin-bottom: 12px;" data-i18n="appName">AI辞書</h1>
+    <h1 style="margin-bottom: 12px;" data-i18n="appName">AI-dictionary</h1>
     <p data-i18n-html="authIntro">Googleアカウントでログインして利用できます。<br>ログイン不要の匿名利用なら1日10回まで無料です。</p>
     <button class="login-btn" id="loginBtn" data-i18n="signInGoogle">Googleでログイン</button>
     <button class="login-btn" id="anonymousBtn" style="margin-top: 8px; background: #777;" data-i18n="continueAnon">匿名で続行（1日10回）</button>
@@ -258,7 +258,7 @@
   <!-- メイン画面 -->
   <div id="mainApp" class="hidden">
     <div class="header">
-      <h1 data-i18n="appName">AI辞書</h1>
+      <h1 data-i18n="appName">AI-dictionary</h1>
       <div class="header-actions">
         <!-- 未ログイン時に表示（テキストは短縮版） -->
         <button class="header-google-btn hidden" id="headerSignInBtn" data-i18n-title="signInGoogle">
@@ -314,7 +314,19 @@
       <input type="hidden" id="aiProvider" value="mercury">
       <input type="hidden" id="mercuryApiKey" value="">
 
-      <!-- プラン管理セクション（最上部に配置） -->
+      <!-- 使い方セクション（最上部） -->
+      <div class="settings-section" style="background:#f8fbff; border:1px solid #d6e6f5;">
+        <h3 data-i18n="howToSection" style="color:#4a90d9;">使い方</h3>
+        <div style="font-size:12px; color:#444; line-height:1.8;">
+          <div data-i18n="howToStep1">1. ウェブページで調べたい単語や文章を選択</div>
+          <div data-i18n="howToStep2">2. 表示されるポップアップで「辞書」または「翻訳」をタップ</div>
+          <div data-i18n="howToStep3">3. 結果が表示されたら「★ 単語帳へ」で保存（有料プラン）</div>
+          <div data-i18n="howToStep4">4. 設定タブから出力言語・UI言語・履歴件数を変更可能</div>
+        </div>
+        <div data-i18n="howToTip" style="font-size:11px; color:#666; margin-top:10px; padding:8px; background:#fff; border-radius:6px; line-height:1.6;">ヒント: 出力言語を変えると、回答もその言語で返ってきます。BYOKプランなら自分のAPIキーで無制限利用できます。</div>
+      </div>
+
+      <!-- プラン管理セクション -->
       <div class="settings-section">
         <h3 data-i18n="planSection">プラン管理</h3>
         <div id="planInfo" style="font-size: 13px; color: #666; line-height: 1.8;"></div>
@@ -389,42 +401,42 @@
   <!-- プラン選択モーダル -->
   <div id="planModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
     <div style="background: #fff; border-radius: 12px; padding: 24px; max-width: 90%; width: 400px; max-height: 80vh; overflow-y: auto;">
-      <h2 style="margin-bottom: 16px;">プランを選択</h2>
+      <h2 style="margin-bottom: 16px;" data-i18n="planModalTitle">プランを選択</h2>
 
       <!-- Freeプラン -->
       <div class="plan-card" data-plan="free" style="border: 2px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s;">
-        <div style="font-weight: 600; margin-bottom: 4px;">無料</div>
-        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">1日10回まで</div>
-        <div style="font-size: 18px; font-weight: bold; color: #333;">¥0/月</div>
+        <div style="font-weight: 600; margin-bottom: 4px;" data-i18n="planFreeName">無料</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;" data-i18n="planFreeLimit">1日10回まで</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;" data-i18n="planFreePrice">¥0/月</div>
       </div>
 
       <!-- Proプラン -->
       <div class="plan-card" data-plan="pro" style="border: 2px solid #4a90d9; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: #f0f4f8; transition: all 0.2s;">
         <div style="font-weight: 600; margin-bottom: 4px; color: #4a90d9;">Pro</div>
-        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">月1,000クレジット</div>
-        <div style="font-size: 18px; font-weight: bold; color: #333;">¥480/月</div>
-        <div style="font-size: 11px; color: #999; margin-top: 8px;">履歴保存・優先サポート</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;" data-i18n="planProLimit">月1,000クレジット</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;" data-i18n="planProPrice">¥480/月</div>
+        <div style="font-size: 11px; color: #999; margin-top: 8px;" data-i18n="planProBenefits">履歴保存・優先サポート</div>
       </div>
 
       <!-- Pro+プラン -->
       <div class="plan-card" data-plan="pro_plus" style="border: 2px solid #32a852; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: #f0f8f0; transition: all 0.2s;">
-        <div style="font-weight: 600; margin-bottom: 4px; color: #32a852;">Pro+ (推奨)</div>
-        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">月3,000クレジット</div>
-        <div style="font-size: 18px; font-weight: bold; color: #333;">¥798/月</div>
-        <div style="font-size: 11px; color: #999; margin-top: 8px;">高速処理・優先サポート</div>
+        <div style="font-weight: 600; margin-bottom: 4px; color: #32a852;" data-i18n="planProPlusName">Pro+ (推奨)</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;" data-i18n="planProPlusLimit">月3,000クレジット</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;" data-i18n="planProPlusPrice">¥798/月</div>
+        <div style="font-size: 11px; color: #999; margin-top: 8px;" data-i18n="planProPlusBenefits">高速処理・優先サポート</div>
       </div>
 
       <!-- BYOKプラン -->
       <div class="plan-card" data-plan="byok" style="border: 2px solid #f57c00; border-radius: 8px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: #fff8f0; transition: all 0.2s;">
         <div style="font-weight: 600; margin-bottom: 4px; color: #f57c00;">BYOK</div>
-        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">自分のAPIキーを使用</div>
-        <div style="font-size: 18px; font-weight: bold; color: #333;">¥165/月</div>
-        <div style="font-size: 11px; color: #999; margin-top: 8px;">クレジット無制限・APIコスト削減</div>
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px;" data-i18n="planByokLimit">自分のAPIキーを使用</div>
+        <div style="font-size: 18px; font-weight: bold; color: #333;" data-i18n="planByokPrice">¥165/月</div>
+        <div style="font-size: 11px; color: #999; margin-top: 8px;" data-i18n="planByokBenefits">クレジット無制限・APIコスト削減</div>
       </div>
 
       <div style="display: flex; gap: 8px; margin-top: 16px;">
-        <button id="planCancelBtn" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #fff;">キャンセル</button>
-        <button id="planConfirmBtn" style="flex: 1; padding: 10px; background: #4a90d9; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">選択</button>
+        <button id="planCancelBtn" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #fff;" data-i18n="cancel">キャンセル</button>
+        <button id="planConfirmBtn" style="flex: 1; padding: 10px; background: #4a90d9; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;" data-i18n="planSelectBtn">選択</button>
       </div>
     </div>
   </div>

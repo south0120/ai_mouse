@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI辞書",
+  "name": "AI-dictionary",
   "version": "2.0",
-  "description": "選択テキストのAI辞書検索・翻訳ができます",
+  "description": "Look up and translate selected text with AI. 選択テキストのAI辞書検索・翻訳。",
   "permissions": ["storage", "sidePanel", "identity"],
   "host_permissions": [],
   "background": {
