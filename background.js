@@ -139,26 +139,36 @@ async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outpu
 
   const systemPrompts = buildSystemPrompts(outputLang);
   const userMsg = buildUserMessage(text, mode, outputLang);
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const body = JSON.stringify({
+    model,
+    messages: [
+      { role: "system", content: systemPrompts[mode] || systemPrompts.dictionary },
+      { role: "user", content: userMsg },
+    ],
+    max_tokens: 1500,
+    temperature: 0.2,
+  });
+
+  const doFetch = () => fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompts[mode] || systemPrompts.dictionary },
-        { role: "user", content: userMsg },
-      ],
-      max_tokens: 1500,
-      temperature: 0.2,
-    }),
+    body,
   });
+
+  let res = await doFetch();
+  // 500系は1回だけリトライ
+  if (res.status >= 500 && res.status < 600) {
+    await new Promise((r) => setTimeout(r, 800));
+    res = await doFetch();
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `${providerName} API error: ${res.status}`);
+    const rawMsg = err.error?.message || `${providerName} API error: ${res.status}`;
+    throw new Error(translateProviderError(rawMsg, res.status, providerName));
   }
   const data = await res.json();
   const answer = data?.choices?.[0]?.message?.content?.trim() || "";
@@ -169,6 +179,24 @@ async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outpu
     );
   }
   return { answer, remaining: -1 };
+}
+
+// プロバイダーの英語エラーメッセージを利用者向けに翻訳
+function translateProviderError(rawMsg, status, providerName) {
+  const m = String(rawMsg || "");
+  if (status >= 500 || /server.*error|internal.*error|temporarily/i.test(m)) {
+    return `${providerName}側で一時的なエラーが発生しました（${status || 500}）。少し待ってから再試行してください。`;
+  }
+  if (status === 429 || /rate.?limit|too many requests/i.test(m)) {
+    return `${providerName}のレート制限に達しました。しばらく待ってから再試行してください。`;
+  }
+  if (status === 401 || /unauthorized|invalid.*key|api key/i.test(m)) {
+    return `${providerName}のAPIキーが無効です。設定を見直してください。`;
+  }
+  if (status === 400 && /context.?length|too long|max.*tokens/i.test(m)) {
+    return `入力が長すぎます。短く区切ってから再試行してください。`;
+  }
+  return `${providerName}でエラー（${status}）: ${m}`;
 }
 
 async function queryMercury(text, mode, outputLang, apiKeyOverride) {
@@ -210,7 +238,8 @@ async function queryGeminiDirect(text, mode, outputLang, apiKey) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Gemini API error: ${res.status}`);
+    const rawMsg = err.error?.message || `Gemini API error: ${res.status}`;
+    throw new Error(translateProviderError(rawMsg, res.status, "Gemini"));
   }
   const data = await res.json();
   const answer = (data.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();

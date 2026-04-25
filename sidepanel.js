@@ -147,7 +147,7 @@ function showMain() {
   const stored = userEmail.textContent && userEmail.textContent !== "-" ? userEmail.textContent : "";
   if (loggedIn) {
     updateHeaderForAuth(true, stored);
-  } else if (stored === t.anonymousUser || stored === "匿名ユーザー" || stored === "Anonymous") {
+  } else if (stored === t.anonymousUser || stored === "匿名ユーザー" || stored === "Anonymous" || stored === "無料" || stored === "Free") {
     updateHeaderForAuth(false, t.anonymousUser);
   } else {
     updateHeaderForAuth(false, "");
@@ -308,7 +308,7 @@ function applyI18n(lang) {
 
   // 匿名表示の即時翻訳
   if (!loggedIn && headerUserEmail && headerUserEmail.textContent &&
-      (headerUserEmail.textContent === "匿名ユーザー" || headerUserEmail.textContent === "Anonymous")) {
+      ["匿名ユーザー", "Anonymous", "無料", "Free"].includes(headerUserEmail.textContent)) {
     headerUserEmail.textContent = t.anonymousUser;
   }
 }
