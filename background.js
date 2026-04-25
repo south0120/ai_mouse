@@ -432,6 +432,30 @@ async function checkAndConsumeDailyFree() {
   return { allowed: true, count: usage.count };
 }
 
+// ====== クライアント側月次クレジット（Pro / Pro+） ======
+const PAID_LIMITS = { pro: 1000, pro_plus: 3000, byok: -1 };
+
+async function checkAndConsumeMonthlyCredit(plan) {
+  const limit = PAID_LIMITS[plan];
+  if (limit === undefined) return { allowed: true };
+  if (limit === -1) return { allowed: true, used: 0, limit: -1 }; // BYOK 無制限
+
+  const month = new Date().toISOString().slice(0, 7);
+  const data = await chrome.storage.local.get({
+    localPaidUsage: { month, count: 0, plan },
+  });
+  let usage = data.localPaidUsage;
+  if (usage.month !== month || usage.plan !== plan) {
+    usage = { month, count: 0, plan };
+  }
+  if (usage.count >= limit) {
+    return { allowed: false, used: usage.count, limit };
+  }
+  usage.count += 1;
+  await chrome.storage.local.set({ localPaidUsage: usage });
+  return { allowed: true, used: usage.count, limit };
+}
+
 // ====== AI問い合わせ（プロキシ経由） ======
 async function queryAI(text, mode, outputLang) {
   let idToken;
@@ -559,6 +583,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             });
             return;
           }
+        } else {
+          // 有料プランは月次クレジットをクライアント側で消費
+          const credit = await checkAndConsumeMonthlyCredit(effectivePlan);
+          if (!credit.allowed) {
+            sendResponse({
+              error: "月間クレジットを使い切りました。来月リセットされます。",
+              remaining: 0,
+              plan: effectivePlan,
+            });
+            return;
+          }
         }
 
         // ルーティング
@@ -579,6 +614,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const today = new Date().toISOString().slice(0, 10);
           const u = await chrome.storage.local.get({ localUsage: { date: today, count: 0 } });
           remaining = Math.max(0, 10 - u.localUsage.count);
+        } else if (effectivePlan === "byok") {
+          remaining = -1; // 無制限
+        } else {
+          const month = new Date().toISOString().slice(0, 7);
+          const u = await chrome.storage.local.get({
+            localPaidUsage: { month, count: 0, plan: effectivePlan },
+          });
+          const limit = PAID_LIMITS[effectivePlan];
+          remaining = Math.max(0, limit - u.localPaidUsage.count);
         }
         sendResponse({ answer: data.answer, remaining, plan: effectivePlan });
       } catch (e) {
@@ -610,7 +654,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const isPaid = plan === "pro" || plan === "pro_plus" || plan === "byok";
 
         if (!isPaid) {
-          // 無料・匿名ユーザーはローカルカウンタを優先表示
+          // 無料・匿名はローカル日次カウンタ
           const today = new Date().toISOString().slice(0, 10);
           const u = await chrome.storage.local.get({ localUsage: { date: today, count: 0 } });
           const usage = u.localUsage.date === today ? u.localUsage : { date: today, count: 0 };
@@ -624,20 +668,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         }
 
-        // 有料プランはサーバー値を取得（失敗時はクライアント上書き値を返す）
-        try {
-          const data = await getUsage();
-          sendResponse(data);
-        } catch (_) {
-          const limits = { pro: 1000, pro_plus: 3000, byok: -1 };
+        // BYOK は無制限
+        if (plan === "byok") {
           sendResponse({
             plan,
             used: 0,
-            limit: limits[plan] === -1 ? "無制限" : limits[plan],
-            remaining: limits[plan] === -1 ? "無制限" : limits[plan],
+            limit: "無制限",
+            remaining: "無制限",
             resetType: "monthly",
           });
+          return;
         }
+
+        // Pro / Pro+ はクライアント月次カウンタを優先（Mercuryルートでも追跡可能）
+        const month = new Date().toISOString().slice(0, 7);
+        const u = await chrome.storage.local.get({
+          localPaidUsage: { month, count: 0, plan },
+        });
+        const usage =
+          u.localPaidUsage.month === month && u.localPaidUsage.plan === plan
+            ? u.localPaidUsage
+            : { month, count: 0, plan };
+        const limit = PAID_LIMITS[plan];
+        sendResponse({
+          plan,
+          used: usage.count,
+          limit,
+          remaining: Math.max(0, limit - usage.count),
+          resetType: "monthly",
+        });
       } catch (e) {
         sendResponse({ error: e.message });
       }

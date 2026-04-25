@@ -894,7 +894,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.history) {
     renderHistory(changes.history.newValue || []);
   }
-  if (area === "local" && changes.localUsage) {
+  if (area === "local" && (changes.localUsage || changes.localPaidUsage)) {
     loadUsage();
   }
   if (area === "local" && changes.openPlanModalAt && changes.openPlanModalAt.newValue) {
