@@ -220,17 +220,26 @@ function loadHistory() {
   });
 }
 
+function isPaidCurrent() {
+  return currentPlan === "pro" || currentPlan === "pro_plus" || currentPlan === "byok";
+}
+
 function renderHistory(history) {
   historyList.innerHTML = "";
 
-  if (!history || history.length === 0) {
+  // 無料プランは上限10件まで表示
+  const items = !isPaidCurrent()
+    ? (history || []).slice(0, 10)
+    : (history || []);
+
+  if (items.length === 0) {
     emptyState.classList.remove("hidden");
     return;
   }
 
   emptyState.classList.add("hidden");
 
-  history.forEach((item) => {
+  items.forEach((item) => {
     const li = document.createElement("li");
     li.className = "history-item";
 
@@ -462,8 +471,41 @@ async function loadPlanInfo() {
   planInfo.appendChild(wrap);
 
   updateByokButtonState();
+  updateHistoryLimitUI();
   if (vocabTabEl && !vocabTabEl.classList.contains("hidden")) renderVocab();
   loadUsage();
+  loadHistory();
+}
+
+function updateHistoryLimitUI() {
+  if (!historyLimit) return;
+  if (!isPaidCurrent()) {
+    // 無料: 10件のみ選択可能
+    historyLimit.replaceChildren();
+    const opt = document.createElement("option");
+    opt.value = "10";
+    opt.textContent = `10${t.historyItemsSuffix}`;
+    historyLimit.appendChild(opt);
+    historyLimit.value = "10";
+    historyLimit.disabled = true;
+    historyLimit.title = currentLang === "en"
+      ? "Free plan is limited to 10 history items"
+      : "無料プランは履歴10件までです";
+  } else {
+    historyLimit.disabled = false;
+    historyLimit.title = "";
+    // 元の選択肢を復元
+    const values = [20, 30, 40, 50];
+    if (historyLimit.options.length !== values.length) {
+      historyLimit.replaceChildren();
+      values.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = String(v);
+        opt.textContent = `${v}${t.historyItemsSuffix}`;
+        historyLimit.appendChild(opt);
+      });
+    }
+  }
 }
 
 changePlanBtn.addEventListener("click", () => {

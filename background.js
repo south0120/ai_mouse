@@ -893,8 +893,17 @@ function parseDictionaryAnswer(text) {
 }
 
 // ====== 履歴管理 ======
+const FREE_HISTORY_LIMIT = 10;
+
 async function saveHistory(input, output, mode) {
-  const settings = await chrome.storage.sync.get({ historyLimit: 30 });
+  const settings = await chrome.storage.sync.get({ historyLimit: 30, byokProvider: "", byokApiKey: "" });
+  const plan = await getEffectivePlan({
+    byokProvider: settings.byokProvider,
+    byokApiKey: settings.byokApiKey,
+  });
+  const isPaid = plan === "pro" || plan === "pro_plus" || plan === "byok";
+  const limit = isPaid ? settings.historyLimit : FREE_HISTORY_LIMIT;
+
   const data = await chrome.storage.local.get({ history: [] });
   const history = data.history;
 
@@ -906,8 +915,8 @@ async function saveHistory(input, output, mode) {
   });
 
   // 上限を超えたら古いものを削除
-  if (history.length > settings.historyLimit) {
-    history.length = settings.historyLimit;
+  if (history.length > limit) {
+    history.length = limit;
   }
 
   await chrome.storage.local.set({ history });

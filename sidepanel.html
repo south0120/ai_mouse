@@ -314,6 +314,16 @@
       <input type="hidden" id="aiProvider" value="mercury">
       <input type="hidden" id="mercuryApiKey" value="">
 
+      <!-- プラン管理セクション（最上部に配置） -->
+      <div class="settings-section">
+        <h3 data-i18n="planSection">プラン管理</h3>
+        <div id="planInfo" style="font-size: 13px; color: #666; line-height: 1.8;"></div>
+        <div style="display: flex; gap: 8px; margin-top: 12px;">
+          <button id="changePlanBtn" class="save-settings-btn" style="flex: 1; background: #4a90d9;" data-i18n="changePlan">プラン変更</button>
+          <button id="byokSetupBtn" class="save-settings-btn" style="flex: 1; background: #666;" data-i18n="byokSetup">BYOK設定</button>
+        </div>
+      </div>
+
       <div class="settings-section">
         <h3 data-i18n="outputLangSection">出力言語</h3>
         <div class="setting-row">
@@ -371,15 +381,6 @@
         </div>
       </div>
 
-      <!-- プラン管理セクション -->
-      <div class="settings-section" style="margin-top: 20px;">
-        <h3 data-i18n="planSection">プラン管理</h3>
-        <div id="planInfo" style="font-size: 13px; color: #666; line-height: 1.8;"></div>
-        <div style="display: flex; gap: 8px; margin-top: 12px;">
-          <button id="changePlanBtn" class="save-settings-btn" style="flex: 1; background: #4a90d9;" data-i18n="changePlan">プラン変更</button>
-          <button id="byokSetupBtn" class="save-settings-btn" style="flex: 1; background: #666;" data-i18n="byokSetup">BYOK設定</button>
-        </div>
-      </div>
     </div>
   </div>
 
