@@ -200,10 +200,28 @@ logoutBtn.addEventListener("click", () => {
 });
 
 // ====== 利用状況 ======
-function loadUsage() {
+async function loadUsage() {
+  // デバッグプラン上書きが有効ならクライアント側で表示
+  const localOverride = await new Promise((resolve) => {
+    chrome.storage.local.get({ debugPlanOverride: "" }, (d) => resolve(d.debugPlanOverride || ""));
+  });
+
+  if (localOverride) {
+    const dummy = {
+      free: { used: 0, limit: 10 },
+      pro: { used: 0, limit: 1000 },
+      pro_plus: { used: 0, limit: 3000 },
+      byok: { used: 0, limit: "∞" },
+    }[localOverride] || { used: 0, limit: 10 };
+    usageBadge.textContent = `${dummy.used} / ${dummy.limit}`;
+    usageBadge.classList.remove("hidden");
+    return;
+  }
+
   chrome.runtime.sendMessage({ type: "getUsage" }, (res) => {
     if (res && !res.error) {
-      usageBadge.textContent = `${res.used} / ${res.limit}`;
+      const limitDisplay = res.limit === "無制限" || res.limit === -1 ? "∞" : res.limit;
+      usageBadge.textContent = `${res.used} / ${limitDisplay}`;
       usageBadge.classList.remove("hidden");
     } else {
       usageBadge.classList.add("hidden");
@@ -462,6 +480,7 @@ async function loadPlanInfo() {
 
   updateByokButtonState();
   if (vocabTabEl && !vocabTabEl.classList.contains("hidden")) renderVocab();
+  loadUsage();
 }
 
 changePlanBtn.addEventListener("click", () => {
@@ -816,6 +835,7 @@ async function init() {
     showMain();
     loadUsage();
     loadHistory();
+    loadPlanInfo();
   } else {
     showAuth();
   }
