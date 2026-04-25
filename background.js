@@ -110,12 +110,43 @@ Exemple: <une courte phrase d'exemple, avec traduction si utile>
   },
 };
 
-function buildSystemPrompts(outputLang) {
-  return PROMPT_TEMPLATES[outputLang] || PROMPT_TEMPLATES.ja;
+// ====== 専門辞書スタイル（Pro+ 限定） ======
+const DOMAIN_HINTS = {
+  general: "",
+  medical: "Domain: medicine and life sciences. Prefer clinical/medical sense (etiology, anatomy, pharmacology) and use accurate medical terminology in the example.",
+  legal: "Domain: law and legal practice. Prefer the legal sense (statute, case law, contract terms, jurisprudence) and reference common usage in legal documents.",
+  tech: "Domain: software, IT, and engineering. Prefer technical sense (programming, networking, security, systems) and use a code/technical context in the example.",
+  finance: "Domain: finance, investing, accounting. Prefer the financial sense (markets, instruments, valuation, accounting terms) and use a financial context in the example.",
+  business: "Domain: business, management, marketing. Prefer business/management sense (strategy, operations, marketing, HR) and use a corporate context in the example.",
+};
+
+function buildSystemPrompts(outputLang, domain) {
+  const base = PROMPT_TEMPLATES[outputLang] || PROMPT_TEMPLATES.ja;
+  const hint = DOMAIN_HINTS[domain] || "";
+  if (!hint) return base;
+  return {
+    dictionary: `${base.dictionary}\n\n[Specialty]\n${hint}`,
+    translate: `${base.translate}\n\n[Specialty]\n${hint}`,
+  };
 }
 
 function langEnglishName(code) {
   return (LANG_META[code] || LANG_META.ja).english;
+}
+
+// プラン判定で専門辞書が使えるか
+async function getActiveDomain() {
+  const settings = await chrome.storage.sync.get({
+    dictionaryDomain: "general",
+    byokProvider: "",
+    byokApiKey: "",
+  });
+  const plan = await getEffectivePlan(settings);
+  // Pro+ / BYOK のみ専門辞書を有効化
+  if (plan === "pro_plus" || plan === "byok") {
+    return settings.dictionaryDomain || "general";
+  }
+  return "general";
 }
 
 // ====== Mercury-2 設定 ======
@@ -134,10 +165,10 @@ function buildUserMessage(text, mode, outputLang) {
   return `${directive}\n\n---\n${text}`;
 }
 
-async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outputLang, providerName }) {
+async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outputLang, providerName, domain }) {
   if (!apiKey) throw new Error(`${providerName} APIキーが未設定です。設定タブで入力してください。`);
 
-  const systemPrompts = buildSystemPrompts(outputLang);
+  const systemPrompts = buildSystemPrompts(outputLang, domain);
   const userMsg = buildUserMessage(text, mode, outputLang);
   const body = JSON.stringify({
     model,
@@ -199,31 +230,31 @@ function translateProviderError(rawMsg, status, providerName) {
   return `${providerName}でエラー（${status}）: ${m}`;
 }
 
-async function queryMercury(text, mode, outputLang, apiKeyOverride) {
+async function queryMercury(text, mode, outputLang, apiKeyOverride, domain) {
   const apiKey = apiKeyOverride || (await getMercuryApiKey());
   return queryOpenAICompatible({
     baseUrl: MERCURY_API_BASE,
     apiKey,
     model: "mercury-2",
-    text, mode, outputLang,
+    text, mode, outputLang, domain,
     providerName: "Mercury",
   });
 }
 
-async function queryOpenAI(text, mode, outputLang, apiKey) {
+async function queryOpenAI(text, mode, outputLang, apiKey, domain) {
   return queryOpenAICompatible({
     baseUrl: "https://api.openai.com/v1",
     apiKey,
     model: "gpt-4o-mini",
-    text, mode, outputLang,
+    text, mode, outputLang, domain,
     providerName: "OpenAI",
   });
 }
 
-async function queryGeminiDirect(text, mode, outputLang, apiKey) {
+async function queryGeminiDirect(text, mode, outputLang, apiKey, domain) {
   if (!apiKey) throw new Error("Gemini APIキーが未設定です。設定タブで入力してください。");
 
-  const systemPrompts = buildSystemPrompts(outputLang);
+  const systemPrompts = buildSystemPrompts(outputLang, domain);
   const sys = systemPrompts[mode] || systemPrompts.dictionary;
   const userMsg = buildUserMessage(text, mode, outputLang);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
@@ -250,7 +281,7 @@ async function queryGeminiDirect(text, mode, outputLang, apiKey) {
   return { answer, remaining: -1 };
 }
 
-async function queryBYOK(text, mode, outputLang) {
+async function queryBYOK(text, mode, outputLang, domain) {
   const { byokProvider, byokApiKey } = await chrome.storage.sync.get({
     byokProvider: "",
     byokApiKey: "",
@@ -258,9 +289,9 @@ async function queryBYOK(text, mode, outputLang) {
   if (!byokProvider || !byokApiKey) {
     throw new Error("BYOK設定が完了していません");
   }
-  if (byokProvider === "gemini") return queryGeminiDirect(text, mode, outputLang, byokApiKey);
-  if (byokProvider === "openai") return queryOpenAI(text, mode, outputLang, byokApiKey);
-  if (byokProvider === "mercury") return queryMercury(text, mode, outputLang, byokApiKey);
+  if (byokProvider === "gemini") return queryGeminiDirect(text, mode, outputLang, byokApiKey, domain);
+  if (byokProvider === "openai") return queryOpenAI(text, mode, outputLang, byokApiKey, domain);
+  if (byokProvider === "mercury") return queryMercury(text, mode, outputLang, byokApiKey, domain);
   throw new Error(`不明なBYOKプロバイダー: ${byokProvider}`);
 }
 
@@ -596,14 +627,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
         }
 
+        // 専門辞書ドメイン（Pro+/BYOKのみ有効）
+        const domain = await getActiveDomain();
+
         // ルーティング
         let data;
         if (settings.byokProvider && settings.byokApiKey) {
-          data = await queryBYOK(text, mode, outputLang);
+          data = await queryBYOK(text, mode, outputLang, domain);
         } else if (settings.aiProvider === "cloud") {
           data = await queryAI(text, mode, outputLang);
         } else {
-          data = await queryMercury(text, mode, outputLang);
+          data = await queryMercury(text, mode, outputLang, undefined, domain);
         }
 
         saveHistory(text, data.answer, mode);
@@ -749,30 +783,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "createCheckoutSession") {
-    const { planId, currency } = msg;
-    (async () => {
-      try {
-        // currency 指定がなければ UI 言語から判定（ja → JPY、それ以外 → USD）
-        let resolvedCurrency = currency;
-        if (!resolvedCurrency) {
-          const s = await chrome.storage.sync.get({ uiLang: "ja" });
-          resolvedCurrency = s.uiLang === "ja" ? "jpy" : "usd";
-        }
-        const idToken = await getFirebaseIdToken();
-        const res = await fetch(`${API_BASE}/createCheckoutSession`, {
+    const { planId } = msg;
+    getFirebaseIdToken()
+      .then((idToken) =>
+        fetch(`${API_BASE}/createCheckoutSession`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ planId, currency: resolvedCurrency }),
-        });
-        const data = await res.json();
-        sendResponse(data);
-      } catch (e) {
-        sendResponse({ error: e.message });
-      }
-    })();
+          body: JSON.stringify({ planId }),
+        })
+      )
+      .then((res) => res.json())
+      .then((data) => sendResponse(data))
+      .catch((e) => sendResponse({ error: e.message }));
     return true;
   }
 

@@ -301,6 +301,10 @@ function applyI18n(lang) {
     const key = el.getAttribute("data-i18n-title");
     if (t[key] != null) el.title = t[key];
   });
+  document.querySelectorAll("[data-i18n-option]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-option");
+    if (t[key] != null) el.textContent = t[key];
+  });
 
   // 履歴件数セレクトのサフィックス
   const historyOpts = document.querySelectorAll("#historyLimit option");
@@ -311,6 +315,7 @@ function applyI18n(lang) {
   // BYOKボタンのtooltip更新
   if (typeof updateByokButtonState === "function") updateByokButtonState();
   if (typeof updateHistoryLimitUI === "function") updateHistoryLimitUI();
+  if (typeof updateDomainUI === "function") updateDomainUI();
 
   // 単語帳検索プレースホルダー
   const vs = document.getElementById("vocabSearch");
@@ -331,12 +336,15 @@ function loadSettings() {
       uiLang: "ja",
       historyLimit: 30,
       aiProvider: "mercury",
+      dictionaryDomain: "general",
     },
     (data) => {
       outputLang.value = data.outputLang;
       uiLang.value = data.uiLang;
       historyLimit.value = String(data.historyLimit);
       if (aiProviderEl) aiProviderEl.value = data.aiProvider || "mercury";
+      const domEl = document.getElementById("dictionaryDomain");
+      if (domEl) domEl.value = data.dictionaryDomain || "general";
       applyI18n(data.uiLang);
       // デバッグプラン上書き
       chrome.storage.local.get({ debugPlanOverride: "" }, (d) => {
@@ -345,6 +353,26 @@ function loadSettings() {
       });
     }
   );
+}
+
+function isProPlusOrByok() {
+  return currentPlan === "pro_plus" || currentPlan === "byok";
+}
+
+function updateDomainUI() {
+  const sel = document.getElementById("dictionaryDomain");
+  const note = document.getElementById("domainNote");
+  if (!sel || !note) return;
+  if (isProPlusOrByok()) {
+    sel.disabled = false;
+    note.textContent = t.domainEnabled;
+    note.style.color = "#32a852";
+  } else {
+    sel.disabled = true;
+    sel.value = "general";
+    note.textContent = t.domainProPlusOnly;
+    note.style.color = "#c97a00";
+  }
 }
 
 saveSettingsBtn.addEventListener("click", () => {
@@ -357,12 +385,16 @@ saveSettingsBtn.addEventListener("click", () => {
   if (!isPaidCurrent() && wantedLimit > 10) {
     historyLimit.value = "10";
   }
+  const domEl = document.getElementById("dictionaryDomain");
+  // 非有料プランは general に強制
+  const domain = isProPlusOrByok() ? (domEl?.value || "general") : "general";
   chrome.storage.sync.set(
     {
       outputLang: outputLang.value,
       uiLang: newLang,
       historyLimit: effectiveLimit,
       aiProvider: "mercury",
+      dictionaryDomain: domain,
     },
     () => {
       chrome.storage.local.set({ debugPlanOverride: debugPlan }, () => {
@@ -476,6 +508,7 @@ async function loadPlanInfo() {
 
   updateByokButtonState();
   updateHistoryLimitUI();
+  updateDomainUI();
   if (vocabTabEl && !vocabTabEl.classList.contains("hidden")) renderVocab();
   loadUsage();
   loadHistory();
