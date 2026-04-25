@@ -310,6 +310,7 @@ function applyI18n(lang) {
 
   // BYOKボタンのtooltip更新
   if (typeof updateByokButtonState === "function") updateByokButtonState();
+  if (typeof updateHistoryLimitUI === "function") updateHistoryLimitUI();
 
   // 単語帳検索プレースホルダー
   const vs = document.getElementById("vocabSearch");
@@ -350,11 +351,17 @@ saveSettingsBtn.addEventListener("click", () => {
   const newLang = uiLang.value;
   const debugPlanEl = document.getElementById("debugPlanOverride");
   const debugPlan = debugPlanEl ? debugPlanEl.value : "";
+  // 無料プランは履歴上限10で保存
+  const wantedLimit = Number(historyLimit.value);
+  const effectiveLimit = !isPaidCurrent() && wantedLimit > 10 ? 10 : wantedLimit;
+  if (!isPaidCurrent() && wantedLimit > 10) {
+    historyLimit.value = "10";
+  }
   chrome.storage.sync.set(
     {
       outputLang: outputLang.value,
       uiLang: newLang,
-      historyLimit: Number(historyLimit.value),
+      historyLimit: effectiveLimit,
       aiProvider: "mercury",
     },
     () => {
@@ -447,8 +454,8 @@ async function loadPlanInfo() {
   const remaining = res.remaining || 0;
 
   const labels = currentLang === "en"
-    ? { current: "Current plan", limit: "Monthly limit", usage: "Usage" }
-    : { current: "現在のプラン", limit: "月間制限", usage: "使用状況" };
+    ? { current: "Current plan", limit: "Monthly limit" }
+    : { current: "現在のプラン", limit: "月間制限" };
 
   planInfo.replaceChildren();
   const wrap = document.createElement("div");
@@ -464,10 +471,7 @@ async function loadPlanInfo() {
   const limitLine = document.createElement("div");
   limitLine.style.cssText = "font-size: 12px; color: #666;";
   limitLine.textContent = `${labels.limit}: ${planDef.limit}`;
-  const usageLine = document.createElement("div");
-  usageLine.style.cssText = "font-size: 12px; color: #666;";
-  usageLine.textContent = `${labels.usage}: ${res.used || 0}${typeof remaining === "number" ? ` / ${res.limit || 0}` : ""}`;
-  wrap.append(planLine, limitLine, usageLine);
+  wrap.append(planLine, limitLine);
   planInfo.appendChild(wrap);
 
   updateByokButtonState();
@@ -479,34 +483,41 @@ async function loadPlanInfo() {
 
 function updateHistoryLimitUI() {
   if (!historyLimit) return;
-  if (!isPaidCurrent()) {
-    // 無料: 10件のみ選択可能
+  // 常に 10/20/30/40/50 の5択
+  const values = [10, 20, 30, 40, 50];
+  if (historyLimit.options.length !== values.length) {
     historyLimit.replaceChildren();
-    const opt = document.createElement("option");
-    opt.value = "10";
-    opt.textContent = `10${t.historyItemsSuffix}`;
-    historyLimit.appendChild(opt);
-    historyLimit.value = "10";
-    historyLimit.disabled = true;
-    historyLimit.title = currentLang === "en"
-      ? "Free plan is limited to 10 history items"
-      : "無料プランは履歴10件までです";
+    values.forEach((v) => {
+      const opt = document.createElement("option");
+      opt.value = String(v);
+      opt.textContent = `${v}${t.historyItemsSuffix}`;
+      historyLimit.appendChild(opt);
+    });
   } else {
-    historyLimit.disabled = false;
-    historyLimit.title = "";
-    // 元の選択肢を復元
-    const values = [20, 30, 40, 50];
-    if (historyLimit.options.length !== values.length) {
-      historyLimit.replaceChildren();
-      values.forEach((v) => {
-        const opt = document.createElement("option");
-        opt.value = String(v);
-        opt.textContent = `${v}${t.historyItemsSuffix}`;
-        historyLimit.appendChild(opt);
-      });
+    Array.from(historyLimit.options).forEach((o) => {
+      o.textContent = `${o.value}${t.historyItemsSuffix}`;
+    });
+  }
+  historyLimit.disabled = false;
+
+  const note = document.getElementById("historyLimitNote");
+  if (note) {
+    if (!isPaidCurrent()) {
+      note.textContent = t.historyFreeNote;
+      note.style.color = "#c97a00";
+    } else {
+      note.textContent = "";
     }
   }
 }
+
+// 無料プランで20件以上を選んだら案内＋強制10
+historyLimit?.addEventListener("change", () => {
+  if (!isPaidCurrent() && Number(historyLimit.value) > 10) {
+    showToast(t.historyPaidRequired, "error");
+    historyLimit.value = "10";
+  }
+});
 
 changePlanBtn.addEventListener("click", () => {
   planModal.classList.remove("hidden");
