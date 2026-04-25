@@ -15,49 +15,67 @@ chrome.storage.onChanged.addListener((changes, area) => {
 function removePopup() {
   if (popup) {
     if (popup._resizeObserver) popup._resizeObserver.disconnect();
+    if (popup._cleanup) popup._cleanup();
     popup.remove();
     popup = null;
   }
 }
 
+// ビューポート内に収まるよう絶対座標で再配置する
 function adjustPopupPosition(el, anchorRect) {
-  // maxWidthをビューポートに合わせて再計算
   const margin = 8;
+  const gap = 8;
   const viewportW = window.innerWidth;
   const viewportH = window.innerHeight;
-  const cap = Math.min(400, viewportW - margin * 2);
-  el.style.maxWidth = `${cap}px`;
 
-  const popupRect = el.getBoundingClientRect();
+  // transform解除（純粋な left/top で位置決め）
+  el.style.transform = "none";
+  el.style.right = "auto";
+  el.style.bottom = "auto";
 
-  // 縦：上にはみ出すなら下側へ
-  if (popupRect.top < margin) {
-    el.style.top = `${anchorRect.bottom + margin}px`;
-    el.style.transform = "translateX(-50%)";
-  }
+  // 横幅・高さの上限をビューポートで強制
+  const maxW = Math.max(120, Math.min(400, viewportW - margin * 2));
+  el.style.maxWidth = `${maxW}px`;
+  const maxH = Math.max(120, viewportH - margin * 2);
+  el.style.maxHeight = `${maxH}px`;
+  el.style.overflowY = "auto";
 
-  // 縦：下にもはみ出すならビューポート内に強制
-  const reRect = el.getBoundingClientRect();
-  if (reRect.bottom > viewportH - margin) {
-    const newTop = Math.max(margin, viewportH - margin - reRect.height);
-    el.style.top = `${newTop}px`;
-    el.style.transform = el.style.transform.replace("translateY(-100%)", "");
-  }
+  // 実寸取得
+  const r = el.getBoundingClientRect();
+  const w = r.width;
+  const h = r.height;
 
-  // 横：左にはみ出す
-  const horizRect = el.getBoundingClientRect();
-  if (horizRect.left < margin) {
-    el.style.left = `${margin}px`;
-    el.style.right = "auto";
-    el.style.transform = el.style.transform.replace("translateX(-50%)", "");
+  // 横：選択範囲の中央に配置 → 端で詰める
+  const anchorCenter = anchorRect.left + anchorRect.width / 2;
+  let left = anchorCenter - w / 2;
+  if (left < margin) left = margin;
+  if (left + w > viewportW - margin) left = viewportW - margin - w;
+  if (left < margin) left = margin; // ポップアップが画面より広い極端ケース
+
+  // 縦：上に出すスペースが十分なら上、なければ下、両方ダメなら強制クランプ
+  const spaceAbove = anchorRect.top - margin;
+  const spaceBelow = viewportH - anchorRect.bottom - margin;
+  let top;
+  if (h + gap <= spaceAbove) {
+    top = anchorRect.top - gap - h;
+  } else if (h + gap <= spaceBelow) {
+    top = anchorRect.bottom + gap;
+  } else {
+    // 上下とも足りない → より広い側に寄せ、足りない分は内部スクロールで吸収
+    if (spaceAbove >= spaceBelow) {
+      top = margin;
+      el.style.maxHeight = `${Math.max(120, anchorRect.top - margin - gap)}px`;
+    } else {
+      top = anchorRect.bottom + gap;
+      el.style.maxHeight = `${Math.max(120, viewportH - top - margin)}px`;
+    }
   }
-  // 横：右にはみ出す
-  const horizRect2 = el.getBoundingClientRect();
-  if (horizRect2.right > viewportW - margin) {
-    el.style.left = "auto";
-    el.style.right = `${margin}px`;
-    el.style.transform = el.style.transform.replace("translateX(-50%)", "");
-  }
+  // 縦の最終クランプ
+  if (top < margin) top = margin;
+  if (top + h > viewportH - margin) top = Math.max(margin, viewportH - margin - h);
+
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(top)}px`;
 }
 
 function createPopup(rect) {
@@ -65,9 +83,8 @@ function createPopup(rect) {
   el._anchorRect = rect;
   Object.assign(el.style, {
     position: "fixed",
-    left: `${rect.left + rect.width / 2}px`,
-    top: `${rect.top - 8}px`,
-    transform: "translate(-50%, -100%)",
+    left: "0px",
+    top: "0px",
     background: "#1a1a2e",
     color: "#eee",
     borderRadius: "10px",
@@ -77,22 +94,29 @@ function createPopup(rect) {
     boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
     maxWidth: `${Math.min(400, window.innerWidth - 16)}px`,
     minWidth: "120px",
-    overflow: "hidden",
     boxSizing: "border-box",
   });
   document.documentElement.appendChild(el);
 
-  // 初回補正
-  requestAnimationFrame(() => adjustPopupPosition(el, rect));
-
-  // コンテンツ変化を監視して再補正
-  const observer = new ResizeObserver(() => {
+  // 初回・コンテンツ変化・スクロール・リサイズの全てで再配置
+  const reposition = () => {
     if (el.isConnected && el._anchorRect) {
       adjustPopupPosition(el, el._anchorRect);
     }
-  });
+  };
+  requestAnimationFrame(reposition);
+
+  const observer = new ResizeObserver(reposition);
   observer.observe(el);
   el._resizeObserver = observer;
+
+  el._reposition = reposition;
+  window.addEventListener("resize", reposition);
+  window.addEventListener("scroll", reposition, true);
+  el._cleanup = () => {
+    window.removeEventListener("resize", reposition);
+    window.removeEventListener("scroll", reposition, true);
+  };
 
   return el;
 }
