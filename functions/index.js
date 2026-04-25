@@ -24,24 +24,42 @@ const PLANS = {
     name: "Pro",
     monthlyCredit: 1000,
     dailyFreeCount: 0,
-    price: 480,
-    stripePriceId: process.env.STRIPE_PRICE_PRO_JPY || "price_pro_jpy",
+    price: { jpy: 480, usd: 399 },
+    stripePriceId: {
+      jpy: process.env.STRIPE_PRICE_PRO_JPY || "price_pro_jpy",
+      usd: process.env.STRIPE_PRICE_PRO_USD || "price_pro_usd",
+    },
   },
   pro_plus: {
     name: "Pro+",
     monthlyCredit: 3000,
     dailyFreeCount: 0,
-    price: 798,
-    stripePriceId: process.env.STRIPE_PRICE_PRO_PLUS_JPY || "price_pro_plus_jpy",
+    price: { jpy: 798, usd: 599 },
+    stripePriceId: {
+      jpy: process.env.STRIPE_PRICE_PRO_PLUS_JPY || "price_pro_plus_jpy",
+      usd: process.env.STRIPE_PRICE_PRO_PLUS_USD || "price_pro_plus_usd",
+    },
   },
   byok: {
     name: "BYOK",
     monthlyCredit: -1, // 無制限
     dailyFreeCount: 0,
-    price: 165,
-    stripePriceId: process.env.STRIPE_PRICE_BYOK_JPY || "price_byok_jpy",
+    price: { jpy: 165, usd: 199 },
+    stripePriceId: {
+      jpy: process.env.STRIPE_PRICE_BYOK_JPY || "price_byok_jpy",
+      usd: process.env.STRIPE_PRICE_BYOK_USD || "price_byok_usd",
+    },
   },
 };
+
+// 通貨判定: クライアントから currency 指定 > Accept-Language > デフォルト USD
+function resolveCurrency(req) {
+  const explicit = (req.body?.currency || req.query?.currency || "").toLowerCase();
+  if (explicit === "jpy" || explicit === "usd") return explicit;
+  const acceptLang = String(req.headers["accept-language"] || "");
+  if (/ja\b|ja-jp/i.test(acceptLang)) return "jpy";
+  return "usd";
+}
 
 // ====== ユーティリティ ======
 
@@ -616,6 +634,15 @@ exports.createCheckoutSession = onRequest(
         return res.status(400).json({ error: "無料プランではCheckoutは不要です" });
       }
 
+      // 通貨判定（USD既定、ja-JP の Accept-Language や明示指定で JPY）
+      const currency = resolveCurrency(req);
+      const priceId = planDef.stripePriceId[currency] || planDef.stripePriceId.usd;
+      if (!priceId || /^price_[a-z_]+$/.test(priceId)) {
+        return res.status(500).json({
+          error: `Stripe Price ID が未設定です (plan=${planId}, currency=${currency})`,
+        });
+      }
+
       const userDoc = await db.collection("users").doc(user.uid).get();
       const userData = userDoc.exists ? userDoc.data() : {};
 
@@ -644,7 +671,7 @@ exports.createCheckoutSession = onRequest(
       const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
         mode: "subscription",
-        line_items: [{ price: planDef.stripePriceId, quantity: 1 }],
+        line_items: [{ price: priceId, quantity: 1 }],
         success_url: `https://ai-mouse-fc8c4.web.app/checkout-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `https://ai-mouse-fc8c4.web.app/checkout-cancel`,
         subscription_data: {
@@ -724,10 +751,16 @@ async function findUidByStripeCustomerId(stripeCustomerId) {
   return snapshot.docs[0].id;
 }
 
-// Stripe Price ID → planId を逆引き
+// Stripe Price ID → planId を逆引き（多通貨対応）
 function getPlanIdByPriceId(priceId) {
   for (const [planId, plan] of Object.entries(PLANS)) {
-    if (plan.stripePriceId === priceId) return planId;
+    if (!plan.stripePriceId) continue;
+    if (typeof plan.stripePriceId === "string") {
+      if (plan.stripePriceId === priceId) return planId;
+    } else {
+      // { jpy, usd } マップ
+      if (Object.values(plan.stripePriceId).includes(priceId)) return planId;
+    }
   }
   return null;
 }

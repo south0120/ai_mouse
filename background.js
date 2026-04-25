@@ -690,21 +690,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "createCheckoutSession") {
-    const { planId } = msg;
-    getFirebaseIdToken()
-      .then((idToken) =>
-        fetch(`${API_BASE}/createCheckoutSession`, {
+    const { planId, currency } = msg;
+    (async () => {
+      try {
+        // currency 指定がなければ UI 言語から判定（ja → JPY、それ以外 → USD）
+        let resolvedCurrency = currency;
+        if (!resolvedCurrency) {
+          const s = await chrome.storage.sync.get({ uiLang: "ja" });
+          resolvedCurrency = s.uiLang === "ja" ? "jpy" : "usd";
+        }
+        const idToken = await getFirebaseIdToken();
+        const res = await fetch(`${API_BASE}/createCheckoutSession`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ planId }),
-        })
-      )
-      .then((res) => res.json())
-      .then((data) => sendResponse(data))
-      .catch((e) => sendResponse({ error: e.message }));
+          body: JSON.stringify({ planId, currency: resolvedCurrency }),
+        });
+        const data = await res.json();
+        sendResponse(data);
+      } catch (e) {
+        sendResponse({ error: e.message });
+      }
+    })();
     return true;
   }
 
