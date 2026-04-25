@@ -822,6 +822,18 @@ async function init() {
   } else {
     showAuth();
   }
+
+  // 起動直後に「プラン選択を開く」要求が残っていればモーダルを表示
+  chrome.storage.local.get({ openPlanModalAt: 0 }, (d) => {
+    if (d.openPlanModalAt && Date.now() - d.openPlanModalAt < 10000) {
+      // 認証画面では押せないので main 表示後のみ
+      if (!authScreen.classList.contains("hidden")) return;
+      setTimeout(triggerPlanModalFromExternal, 200);
+    } else if (d.openPlanModalAt) {
+      // 古いフラグはクリア
+      chrome.storage.local.remove("openPlanModalAt");
+    }
+  });
 }
 
 // 履歴と使用状況の自動更新（ストレージ変更を監視）
@@ -832,6 +844,20 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.localUsage) {
     loadUsage();
   }
+  if (area === "local" && changes.openPlanModalAt && changes.openPlanModalAt.newValue) {
+    triggerPlanModalFromExternal();
+  }
 });
+
+// 外部からの「プラン選択を開く」要求を処理
+function triggerPlanModalFromExternal() {
+  // 設定タブへ切替（プラン管理セクションを見えるように）
+  const settingsTabBtn = document.querySelector('[data-tab="settings"]');
+  if (settingsTabBtn) settingsTabBtn.click();
+  // プラン選択モーダルを開く
+  if (changePlanBtn) changePlanBtn.click();
+  // フラグをクリア
+  chrome.storage.local.remove("openPlanModalAt");
+}
 
 init();

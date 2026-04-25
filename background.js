@@ -777,6 +777,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "openPlanModal") {
+    // sidepanel側に「プラン選択を開く」要求を保存
+    chrome.storage.local.set({ openPlanModalAt: Date.now() });
+    // サイドパネルが閉じている場合はユーザー操作の延長で開く
+    const tabId = _sender?.tab?.id;
+    if (tabId && chrome.sidePanel?.open) {
+      chrome.sidePanel.open({ tabId }).catch((e) =>
+        console.warn("sidePanel.open failed:", e?.message)
+      );
+    }
+    sendResponse({ success: true });
+    return false;
+  }
+
   if (msg.type === "addVocab") {
     (async () => {
       try {

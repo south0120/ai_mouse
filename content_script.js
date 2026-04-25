@@ -281,7 +281,7 @@ function handleAIQuery(text, mode, popup, toolbar) {
               fontWeight: "bold",
             });
             actionBtn.addEventListener("click", () => {
-              chrome.runtime.openOptionsPage();
+              chrome.runtime.sendMessage({ type: "openPlanModal" });
             });
             resultArea.appendChild(actionBtn);
           }
