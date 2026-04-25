@@ -18,33 +18,34 @@ const LANG_META = {
 // ====== プロンプト生成（出力言語ネイティブで記述） ======
 const PROMPT_TEMPLATES = {
   ja: {
-    dictionary: `あなたは高精度な辞書AIです。与えられたテキストから意味を持つ語・フレーズ・固有名詞を抽出し、それぞれについて以下のブロック形式で日本語のみで回答してください。日本語以外の言語は使わないこと。
+    dictionary: `あなたは高精度な辞書AIです。与えられたテキストから意味のある語・フレーズ・固有名詞・人名・組織名を抽出し、それぞれについて以下のブロック形式で日本語のみで回答してください。
 
-【出力フォーマット】各語ごとに以下のブロックを繰り返す。複数語あれば空行で区切る。
+【出力フォーマット】各見出しごとに以下のブロックを繰り返す。複数あれば空行で区切る。空応答は禁止。
 ■ <見出し語そのもの>
-品詞: <名詞／動詞／形容詞 等>
-意味: <1〜2文で核となる意味>
-用例: <短い例文を1つ。必要なら訳も併記>
+品詞: <名詞／動詞／固有名詞／人名／組織名 等>
+意味: <1〜2文で核となる意味・概要>
+用例: <短い例文を1つ。固有名詞なら関連する一文や所属でも可>
 
-- 「単語」とは内容語（名詞・動詞・形容詞・固有名詞・連語など）を指す。助詞・冠詞・前置詞のみの語は対象外
-- 入力が1語ならブロックは1つ。複数語あれば抽出順に複数ブロック
-- 前置きや解説、見出し以外の余計な記号や装飾は不要
-- 同じ語の複数義は意味欄内で「① ②」のように1〜2個まで`,
+- 抽出対象: 一般語の内容語（名詞・動詞・形容詞・連語）に加え、固有名詞・人名・地名・組織名・略語・専門用語も含める
+- 抽出から外すのは助詞・冠詞・前置詞のみで構成された語
+- 入力にどんな語が含まれていても、必ず最低1つはブロックを出力すること
+- 全角スペース・改行・記号などで区切られている場合は語ごとに分けて出力
+- 前置きや謝辞、装飾は不要`,
     translate: `あなたは高精度な翻訳AIです。与えられたテキストを必ず日本語のみに翻訳してください。前置き・注釈・原文の繰り返しは禁止。翻訳結果だけを返してください。`,
   },
   en: {
-    dictionary: `You are a precise dictionary AI. From the given text, extract every meaningful word, phrase, or proper noun, and answer about each of them in English ONLY using the block format below. Never use any other language.
+    dictionary: `You are a precise dictionary AI. From the given text, extract every meaningful word, phrase, proper noun, person name, place, or organization name, and answer about each of them in English ONLY using the block format below.
 
-[Output format] Repeat the block below for each item. Separate multiple items with a blank line.
+[Output format] Repeat the block below for each item. Separate multiple items with a blank line. Never return an empty answer.
 ■ <the headword itself>
-Part of speech: <noun / verb / adjective, etc.>
-Meaning: <core meaning in 1–2 sentences>
-Example: <one short example sentence; add a translation if helpful>
+Part of speech: <noun / verb / adjective / proper noun / person / organization, etc.>
+Meaning: <core meaning or concise overview in 1–2 sentences>
+Example: <one short example sentence; for a proper noun, a relevant fact or affiliation is fine>
 
-- "Word" means a content word (noun, verb, adjective, proper noun, fixed phrase). Skip pure function words (articles, particles, prepositions on their own).
-- If the input is a single word, output one block. If multiple, output multiple blocks in source order.
-- No preamble, no extra decoration.
-- For polysemous words, keep at most 1–2 senses inside the Meaning line as "1) ... 2) ...".`,
+- Always include proper nouns, person names, place names, organizations, acronyms, and technical terms.
+- Skip only words that are purely function words (articles/prepositions alone).
+- Always output at least one block, even when the input is a name list.
+- No preamble, no extra decoration.`,
     translate: `You are a precise translation AI. Translate the given text into English ONLY. Do not add any preamble, notes, or the original text. Return only the translation.`,
   },
   zh: {
@@ -150,7 +151,8 @@ async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outpu
         { role: "system", content: systemPrompts[mode] || systemPrompts.dictionary },
         { role: "user", content: userMsg },
       ],
-      max_tokens: 500,
+      max_tokens: 1500,
+      temperature: 0.2,
     }),
   });
 
@@ -159,7 +161,14 @@ async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outpu
     throw new Error(err.error?.message || `${providerName} API error: ${res.status}`);
   }
   const data = await res.json();
-  return { answer: data.choices[0].message.content, remaining: -1 };
+  const answer = data?.choices?.[0]?.message?.content?.trim() || "";
+  if (!answer) {
+    console.error(`${providerName} returned empty answer. Raw:`, data);
+    throw new Error(
+      `${providerName}から回答が得られませんでした。入力を短く区切り直すか、別の語で試してください。`
+    );
+  }
+  return { answer, remaining: -1 };
 }
 
 async function queryMercury(text, mode, outputLang, apiKeyOverride) {
@@ -196,7 +205,7 @@ async function queryGeminiDirect(text, mode, outputLang, apiKey) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: sys }] },
       contents: [{ role: "user", parts: [{ text: userMsg }] }],
-      generationConfig: { maxOutputTokens: 500 },
+      generationConfig: { maxOutputTokens: 1500, temperature: 0.2 },
     }),
   });
   if (!res.ok) {
@@ -204,7 +213,11 @@ async function queryGeminiDirect(text, mode, outputLang, apiKey) {
     throw new Error(err.error?.message || `Gemini API error: ${res.status}`);
   }
   const data = await res.json();
-  const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const answer = (data.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+  if (!answer) {
+    console.error("Gemini returned empty answer. Raw:", data);
+    throw new Error("Geminiから回答が得られませんでした。入力を短く区切り直すか、別の語で試してください。");
+  }
   return { answer, remaining: -1 };
 }
 

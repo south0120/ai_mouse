@@ -262,11 +262,20 @@ function handleAIQuery(text, mode, popup, toolbar) {
             resultArea.appendChild(actionBtn);
           }
         } else {
-          resultArea.textContent = res.answer;
+          const ans = (res.answer || "").trim();
+          if (!ans) {
+            resultArea.textContent = (uiT && uiT === getI18n("en"))
+              ? "No answer was returned. Try a shorter or different selection."
+              : "回答が得られませんでした。入力を短く区切るか、別の語で試してください。";
+            resultArea.style.color = "#f88";
+            if (toolbar) showCompletionBadge(toolbar, mode, true);
+            return;
+          }
+          resultArea.textContent = ans;
           resultArea.style.color = "#ddd";
           const vocabPayload = {
             sourceInput: text,
-            answer: res.answer,
+            answer: ans,
             outputLang: settings.outputLang || "ja",
           };
           if (toolbar) showCompletionBadge(toolbar, mode, false, vocabPayload);
