@@ -200,24 +200,7 @@ logoutBtn.addEventListener("click", () => {
 });
 
 // ====== 利用状況 ======
-async function loadUsage() {
-  // デバッグプラン上書きが有効ならクライアント側で表示
-  const localOverride = await new Promise((resolve) => {
-    chrome.storage.local.get({ debugPlanOverride: "" }, (d) => resolve(d.debugPlanOverride || ""));
-  });
-
-  if (localOverride) {
-    const dummy = {
-      free: { used: 0, limit: 10 },
-      pro: { used: 0, limit: 1000 },
-      pro_plus: { used: 0, limit: 3000 },
-      byok: { used: 0, limit: "∞" },
-    }[localOverride] || { used: 0, limit: 10 };
-    usageBadge.textContent = `${dummy.used} / ${dummy.limit}`;
-    usageBadge.classList.remove("hidden");
-    return;
-  }
-
+function loadUsage() {
   chrome.runtime.sendMessage({ type: "getUsage" }, (res) => {
     if (res && !res.error) {
       const limitDisplay = res.limit === "無制限" || res.limit === -1 ? "∞" : res.limit;
@@ -841,10 +824,13 @@ async function init() {
   }
 }
 
-// 履歴の自動更新（ストレージ変更を監視）
+// 履歴と使用状況の自動更新（ストレージ変更を監視）
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.history) {
     renderHistory(changes.history.newValue || []);
+  }
+  if (area === "local" && changes.localUsage) {
+    loadUsage();
   }
 });
 

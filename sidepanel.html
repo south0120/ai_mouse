@@ -15,15 +15,16 @@
     /* ヘッダー */
     .header {
       background: #fff;
-      padding: 12px 16px;
+      padding: 10px 12px;
       border-bottom: 1px solid #e5e7eb;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 6px;
+      flex-wrap: nowrap;
     }
-    .header h1 { font-size: 15px; }
-    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .header h1 { font-size: 15px; white-space: nowrap; }
+    .header-actions { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
     .icon-btn {
       background: none;
       border: 1px solid #ddd;
@@ -41,15 +42,17 @@
     .header-google-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       background: #fff;
       border: 1px solid #dadce0;
       color: #3c4043;
       border-radius: 6px;
-      padding: 6px 10px;
+      padding: 5px 8px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .header-google-btn:hover { background: #f7f8f8; }
     .header-user {
@@ -257,10 +260,10 @@
     <div class="header">
       <h1 data-i18n="appName">AI辞書</h1>
       <div class="header-actions">
-        <!-- 未ログイン時に表示 -->
-        <button class="header-google-btn hidden" id="headerSignInBtn">
+        <!-- 未ログイン時に表示（テキストは短縮版） -->
+        <button class="header-google-btn hidden" id="headerSignInBtn" data-i18n-title="signInGoogle">
           <span class="header-google-icon"></span>
-          <span data-i18n="signInGoogle">Googleでログイン</span>
+          <span data-i18n="signInShort">ログイン</span>
         </button>
         <!-- ログイン済みに表示 -->
         <span class="header-user hidden" id="headerUser">

@@ -366,6 +366,43 @@ async function signOut() {
   });
 }
 
+// ====== プラン判定 ======
+async function getEffectivePlan(settings) {
+  // 1. ローカルデバッグ上書き
+  const local = await chrome.storage.local.get({ debugPlanOverride: "" });
+  if (local.debugPlanOverride) return local.debugPlanOverride;
+
+  // 2. BYOKキー設定済み = byok 扱い
+  if (settings && settings.byokProvider && settings.byokApiKey) return "byok";
+
+  // 3. サーバー側の購読状態（Stripe webhook 連携時）
+  try {
+    const idToken = await getFirebaseIdToken();
+    const res = await fetch(`${API_BASE}/getSubscriptionStatus`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.plan || "free";
+    }
+  } catch {}
+  return "free";
+}
+
+// ====== クライアント側日次制限（匿名・無料ユーザー） ======
+async function checkAndConsumeDailyFree() {
+  const today = new Date().toISOString().slice(0, 10);
+  const data = await chrome.storage.local.get({ localUsage: { date: today, count: 0 } });
+  let usage = data.localUsage;
+  if (usage.date !== today) usage = { date: today, count: 0 };
+  if (usage.count >= 10) {
+    return { allowed: false, count: usage.count };
+  }
+  usage.count += 1;
+  await chrome.storage.local.set({ localUsage: usage });
+  return { allowed: true, count: usage.count };
+}
+
 // ====== AI問い合わせ（プロキシ経由） ======
 async function queryAI(text, mode, outputLang) {
   let idToken;
@@ -467,27 +504,58 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const mode = msg.mode || "dictionary";
     const outputLang = msg.outputLang || "ja";
 
-    // BYOK > aiProvider 設定 > Mercury（既定）の優先順
-    chrome.storage.sync.get(
-      { aiProvider: "mercury", byokProvider: "", byokApiKey: "" },
-      (settings) => {
-        let queryFn;
-        if (settings.byokProvider && settings.byokApiKey) {
-          queryFn = queryBYOK(text, mode, outputLang);
-        } else if (settings.aiProvider === "cloud") {
-          queryFn = queryAI(text, mode, outputLang);
-        } else {
-          queryFn = queryMercury(text, mode, outputLang);
+    (async () => {
+      try {
+        const settings = await chrome.storage.sync.get({
+          aiProvider: "mercury",
+          byokProvider: "",
+          byokApiKey: "",
+        });
+
+        // 有効プランの判定（BYOK key設定済み or デバッグ上書き or サーバー値）
+        const effectivePlan = await getEffectivePlan(settings);
+        const isPaid =
+          effectivePlan === "pro" ||
+          effectivePlan === "pro_plus" ||
+          effectivePlan === "byok";
+
+        // 無料・匿名ユーザーには日次10回のクライアント側制限
+        if (!isPaid) {
+          const usage = await checkAndConsumeDailyFree();
+          if (!usage.allowed) {
+            sendResponse({
+              error: "本日の無料枠（10回）を使い切りました。明日リセット、または有料プランへのアップグレードをご検討ください。",
+              remaining: 0,
+              plan: "free",
+            });
+            return;
+          }
         }
 
-        queryFn
-          .then((data) => {
-            saveHistory(text, data.answer, mode);
-            sendResponse({ answer: data.answer, remaining: data.remaining });
-          })
-          .catch((e) => sendResponse({ error: e.message }));
+        // ルーティング
+        let data;
+        if (settings.byokProvider && settings.byokApiKey) {
+          data = await queryBYOK(text, mode, outputLang);
+        } else if (settings.aiProvider === "cloud") {
+          data = await queryAI(text, mode, outputLang);
+        } else {
+          data = await queryMercury(text, mode, outputLang);
+        }
+
+        saveHistory(text, data.answer, mode);
+
+        // 利用状況をローカルに反映
+        let remaining = data.remaining;
+        if (!isPaid) {
+          const today = new Date().toISOString().slice(0, 10);
+          const u = await chrome.storage.local.get({ localUsage: { date: today, count: 0 } });
+          remaining = Math.max(0, 10 - u.localUsage.count);
+        }
+        sendResponse({ answer: data.answer, remaining, plan: effectivePlan });
+      } catch (e) {
+        sendResponse({ error: e.message });
       }
-    );
+    })();
     return true;
   }
 
@@ -506,9 +574,45 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "getUsage") {
-    getUsage()
-      .then((data) => sendResponse(data))
-      .catch((e) => sendResponse({ error: e.message }));
+    (async () => {
+      try {
+        const settings = await chrome.storage.sync.get({ byokProvider: "", byokApiKey: "" });
+        const plan = await getEffectivePlan(settings);
+        const isPaid = plan === "pro" || plan === "pro_plus" || plan === "byok";
+
+        if (!isPaid) {
+          // 無料・匿名ユーザーはローカルカウンタを優先表示
+          const today = new Date().toISOString().slice(0, 10);
+          const u = await chrome.storage.local.get({ localUsage: { date: today, count: 0 } });
+          const usage = u.localUsage.date === today ? u.localUsage : { date: today, count: 0 };
+          sendResponse({
+            plan,
+            used: usage.count,
+            limit: 10,
+            remaining: Math.max(0, 10 - usage.count),
+            resetType: "daily",
+          });
+          return;
+        }
+
+        // 有料プランはサーバー値を取得（失敗時はクライアント上書き値を返す）
+        try {
+          const data = await getUsage();
+          sendResponse(data);
+        } catch (_) {
+          const limits = { pro: 1000, pro_plus: 3000, byok: -1 };
+          sendResponse({
+            plan,
+            used: 0,
+            limit: limits[plan] === -1 ? "無制限" : limits[plan],
+            remaining: limits[plan] === -1 ? "無制限" : limits[plan],
+            resetType: "monthly",
+          });
+        }
+      } catch (e) {
+        sendResponse({ error: e.message });
+      }
+    })();
     return true;
   }
 
