@@ -157,19 +157,23 @@ async function getMercuryApiKey() {
   return data.mercuryApiKey;
 }
 
-function buildUserMessage(text, mode, outputLang) {
+function buildUserMessage(text, mode, outputLang, context) {
   const langEn = langEnglishName(outputLang);
   const directive = mode === "translate"
-    ? `Translate the following text strictly into ${langEn} ONLY. Output: ${langEn}.`
+    ? `Translate the TARGET text strictly into ${langEn} ONLY. Use the CONTEXT only to disambiguate meaning, but DO NOT translate the context. Output: ${langEn}.`
     : `From the input below, extract each meaningful word/phrase/proper noun and produce one dictionary block per item (headword, part of speech, meaning, example). If there is only one item, output one block. Use ${langEn} ONLY.`;
+
+  if (mode === "translate" && context && context.length > text.length + 10) {
+    return `${directive}\n\n[CONTEXT — for disambiguation only, do NOT translate this]\n${context}\n\n[TARGET — translate ONLY this]\n${text}`;
+  }
   return `${directive}\n\n---\n${text}`;
 }
 
-async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outputLang, providerName, domain }) {
+async function queryOpenAICompatible({ baseUrl, apiKey, model, text, mode, outputLang, providerName, domain, context }) {
   if (!apiKey) throw new Error(`${providerName} APIキーが未設定です。設定タブで入力してください。`);
 
   const systemPrompts = buildSystemPrompts(outputLang, domain);
-  const userMsg = buildUserMessage(text, mode, outputLang);
+  const userMsg = buildUserMessage(text, mode, outputLang, context);
   const body = JSON.stringify({
     model,
     messages: [
@@ -230,33 +234,33 @@ function translateProviderError(rawMsg, status, providerName) {
   return `${providerName}でエラー（${status}）: ${m}`;
 }
 
-async function queryMercury(text, mode, outputLang, apiKeyOverride, domain) {
+async function queryMercury(text, mode, outputLang, apiKeyOverride, domain, context) {
   const apiKey = apiKeyOverride || (await getMercuryApiKey());
   return queryOpenAICompatible({
     baseUrl: MERCURY_API_BASE,
     apiKey,
     model: "mercury-2",
-    text, mode, outputLang, domain,
+    text, mode, outputLang, domain, context,
     providerName: "Mercury",
   });
 }
 
-async function queryOpenAI(text, mode, outputLang, apiKey, domain) {
+async function queryOpenAI(text, mode, outputLang, apiKey, domain, context) {
   return queryOpenAICompatible({
     baseUrl: "https://api.openai.com/v1",
     apiKey,
     model: "gpt-4o-mini",
-    text, mode, outputLang, domain,
+    text, mode, outputLang, domain, context,
     providerName: "OpenAI",
   });
 }
 
-async function queryGeminiDirect(text, mode, outputLang, apiKey, domain) {
+async function queryGeminiDirect(text, mode, outputLang, apiKey, domain, context) {
   if (!apiKey) throw new Error("Gemini APIキーが未設定です。設定タブで入力してください。");
 
   const systemPrompts = buildSystemPrompts(outputLang, domain);
   const sys = systemPrompts[mode] || systemPrompts.dictionary;
-  const userMsg = buildUserMessage(text, mode, outputLang);
+  const userMsg = buildUserMessage(text, mode, outputLang, context);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
@@ -281,7 +285,7 @@ async function queryGeminiDirect(text, mode, outputLang, apiKey, domain) {
   return { answer, remaining: -1 };
 }
 
-async function queryBYOK(text, mode, outputLang, domain) {
+async function queryBYOK(text, mode, outputLang, domain, context) {
   const { byokProvider, byokApiKey } = await chrome.storage.sync.get({
     byokProvider: "",
     byokApiKey: "",
@@ -289,9 +293,9 @@ async function queryBYOK(text, mode, outputLang, domain) {
   if (!byokProvider || !byokApiKey) {
     throw new Error("BYOK設定が完了していません");
   }
-  if (byokProvider === "gemini") return queryGeminiDirect(text, mode, outputLang, byokApiKey, domain);
-  if (byokProvider === "openai") return queryOpenAI(text, mode, outputLang, byokApiKey, domain);
-  if (byokProvider === "mercury") return queryMercury(text, mode, outputLang, byokApiKey, domain);
+  if (byokProvider === "gemini") return queryGeminiDirect(text, mode, outputLang, byokApiKey, domain, context);
+  if (byokProvider === "openai") return queryOpenAI(text, mode, outputLang, byokApiKey, domain, context);
+  if (byokProvider === "mercury") return queryMercury(text, mode, outputLang, byokApiKey, domain, context);
   throw new Error(`不明なBYOKプロバイダー: ${byokProvider}`);
 }
 
@@ -587,6 +591,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const text = msg.text;
     const mode = msg.mode || "dictionary";
     const outputLang = msg.outputLang || "ja";
+    const rawContext = typeof msg.context === "string" ? msg.context : "";
 
     (async () => {
       try {
@@ -630,14 +635,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // 専門辞書ドメイン（Pro+/BYOKのみ有効）
         const domain = await getActiveDomain();
 
+        // 文脈考慮翻訳（Pro+/BYOK のみ context を採用、他は無視）
+        const allowContext = effectivePlan === "pro_plus" || effectivePlan === "byok";
+        const context = allowContext ? rawContext : "";
+
         // ルーティング
         let data;
         if (settings.byokProvider && settings.byokApiKey) {
-          data = await queryBYOK(text, mode, outputLang, domain);
+          data = await queryBYOK(text, mode, outputLang, domain, context);
         } else if (settings.aiProvider === "cloud") {
           data = await queryAI(text, mode, outputLang);
         } else {
-          data = await queryMercury(text, mode, outputLang, undefined, domain);
+          data = await queryMercury(text, mode, outputLang, undefined, domain, context);
         }
 
         saveHistory(text, data.answer, mode);

@@ -251,9 +251,34 @@ function handleAIQuery(text, mode, popup, toolbar) {
   resultArea.textContent = labels.loading;
   resultArea.style.color = "#ddd";
 
+  // 翻訳モードのみ、選択範囲の周辺テキストを取得して文脈ヒントに使う
+  let context = "";
+  if (mode === "translate") {
+    try {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        let containerNode = range.commonAncestorContainer;
+        if (containerNode.nodeType === Node.TEXT_NODE) {
+          containerNode = containerNode.parentElement;
+        }
+        // 親要素の文章を取得し、選択範囲の前後を抽出
+        const fullText = (containerNode?.innerText || "").trim();
+        if (fullText && fullText.length > text.length) {
+          const idx = fullText.indexOf(text);
+          if (idx >= 0) {
+            const start = Math.max(0, idx - 300);
+            const end = Math.min(fullText.length, idx + text.length + 300);
+            context = fullText.slice(start, end);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   chrome.storage.sync.get({ outputLang: "ja" }, (settings) => {
     chrome.runtime.sendMessage(
-      { type: "queryAI", text, mode, outputLang: settings.outputLang },
+      { type: "queryAI", text, mode, outputLang: settings.outputLang, context },
       (res) => {
         if (chrome.runtime.lastError) {
           resultArea.textContent = labels.commError;
