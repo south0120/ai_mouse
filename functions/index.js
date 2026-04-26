@@ -652,6 +652,12 @@ exports.createCheckoutSession = onRequest(
         customer: stripeCustomerId,
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
+        // ユーザーがプロモコードを入力できるようにする（100%OFFでテスト用途）
+        allow_promotion_codes: true,
+        // 任意でクライアントから固定クーポン適用（管理者発行URLに埋め込む）
+        ...(req.body?.couponId
+          ? { discounts: [{ coupon: String(req.body.couponId) }] }
+          : {}),
         success_url: `https://ai-mouse-fc8c4.web.app/checkout-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `https://ai-mouse-fc8c4.web.app/checkout-cancel`,
         subscription_data: {
@@ -982,6 +988,72 @@ exports.validateBYOKKey = onRequest(
     } catch (e) {
       console.error("validateBYOKKey error:", e);
       res.status(500).json({ error: "キー検証に失敗しました" });
+    }
+  }
+);
+
+// ====== 管理者：特定メールにプランを手動付与（テストユーザー用） ======
+// 環境変数 ADMIN_EMAILS（カンマ区切り）に該当する Firebase ユーザーのみ実行可
+exports.grantPlan = onRequest(
+  { cors: true, region: "asia-northeast1" },
+  async (req, res) => {
+    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+    const caller = await verifyAuth(req);
+    if (!caller) return res.status(401).json({ error: "認証が必要です" });
+
+    const adminEmails = String(process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (!adminEmails.includes((caller.email || "").toLowerCase())) {
+      return res.status(403).json({ error: "管理者のみ実行できます" });
+    }
+
+    const { targetEmail, planId, durationDays } = req.body || {};
+    if (!targetEmail || !planId || !PLANS[planId]) {
+      return res.status(400).json({ error: "targetEmail と有効な planId を指定してください" });
+    }
+
+    try {
+      const userRecord = await admin.auth().getUserByEmail(targetEmail);
+      const uid = userRecord.uid;
+      const expiresAt = durationDays
+        ? new Date(Date.now() + Number(durationDays) * 86400000)
+        : null;
+
+      await db.collection("users").doc(uid).set(
+        {
+          planId,
+          grantedBy: caller.email,
+          grantedAt: new Date(),
+          ...(expiresAt ? { grantedExpiresAt: expiresAt } : {}),
+        },
+        { merge: true }
+      );
+
+      // 月次クレジット初期化（既存があれば上書き）
+      const month = getCurrentMonth();
+      const planDef = PLANS[planId];
+      await db.collection("credits").doc(`${uid}_${month}`).set({
+        userId: uid,
+        month,
+        planId,
+        used: 0,
+        limit: planDef.monthlyCredit,
+        resetAt: new Date(Date.now() + 30 * 86400000),
+        createdAt: new Date(),
+      });
+
+      res.json({
+        success: true,
+        targetUid: uid,
+        planId,
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
+      });
+    } catch (e) {
+      console.error("grantPlan error:", e);
+      res.status(500).json({ error: e.message || "プラン付与に失敗しました" });
     }
   }
 );
