@@ -59,7 +59,10 @@ document.querySelectorAll(".tab").forEach((tab) => {
     settingsTab.classList.toggle("hidden", target !== "settings");
     vocabTabEl.classList.toggle("hidden", target !== "vocab");
 
-    if (target === "vocab") renderVocab();
+    if (target === "vocab") {
+      renderVocab();
+      updateSyncBtnState();
+    }
   });
 });
 
@@ -509,6 +512,7 @@ async function loadPlanInfo() {
   updateByokButtonState();
   updateHistoryLimitUI();
   updateDomainUI();
+  updateSyncBtnState();
   if (vocabTabEl && !vocabTabEl.classList.contains("hidden")) renderVocab();
   loadUsage();
   loadHistory();
@@ -733,6 +737,8 @@ const vocabSearch = document.getElementById("vocabSearch");
 const vocabExportCsvBtn = document.getElementById("vocabExportCsvBtn");
 const vocabExportAnkiBtn = document.getElementById("vocabExportAnkiBtn");
 const vocabUpgradeBtn = document.getElementById("vocabUpgradeBtn");
+const vocabSyncBtn = document.getElementById("vocabSyncBtn");
+const vocabSyncStatus = document.getElementById("vocabSyncStatus");
 
 function isPaidPlan() {
   return currentPlan === "pro" || currentPlan === "pro_plus" || currentPlan === "byok";
@@ -821,6 +827,110 @@ async function renderVocab() {
 vocabSearch.addEventListener("input", renderVocab);
 vocabUpgradeBtn.addEventListener("click", () => {
   changePlanBtn.click();
+});
+
+// ====== クラウド同期 ======
+function setSyncStatus(text, color) {
+  if (!vocabSyncStatus) return;
+  vocabSyncStatus.textContent = text || "";
+  vocabSyncStatus.style.color = color || "#888";
+}
+
+function fmtSyncTime(ms) {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function updateSyncBtnState() {
+  if (!vocabSyncBtn) return;
+  const eligible = isProPlusOrByok();
+  vocabSyncBtn.disabled = !eligible;
+  vocabSyncBtn.style.opacity = eligible ? "1" : "0.5";
+  vocabSyncBtn.style.cursor = eligible ? "pointer" : "not-allowed";
+  vocabSyncBtn.title = eligible ? t.vocabSyncTooltip : t.vocabSyncProPlusOnly;
+  // 最終同期時刻表示
+  chrome.storage.local.get({ vocabLastSyncAt: 0 }, (d) => {
+    if (d.vocabLastSyncAt) {
+      setSyncStatus(`${t.vocabSyncLastAt}: ${fmtSyncTime(d.vocabLastSyncAt)}`, "#888");
+    } else {
+      setSyncStatus("", "#888");
+    }
+  });
+}
+
+async function syncVocabulary() {
+  if (!isProPlusOrByok()) {
+    showToast(t.vocabSyncProPlusOnly, "error");
+    return;
+  }
+  vocabSyncBtn.disabled = true;
+  setSyncStatus(t.vocabSyncing, "#4a90d9");
+
+  // 1. ローカル状態
+  const local = await getVocab();
+
+  // 2. サーバーから pull
+  const pullRes = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "vocabPull" }, (r) => resolve(r || {}));
+  });
+  if (pullRes.error) {
+    setSyncStatus(`${t.vocabSyncFailed}: ${pullRes.error}`, "#c97a00");
+    vocabSyncBtn.disabled = false;
+    return;
+  }
+
+  // 3. マージ（id 一意・savedAt 新しい方を採用）
+  const map = new Map();
+  for (const it of pullRes.items || []) {
+    if (it.id) map.set(it.id, it);
+  }
+  for (const it of local) {
+    if (!it.id) continue;
+    const exist = map.get(it.id);
+    if (!exist || (it.savedAt || 0) >= (exist.savedAt || 0)) {
+      map.set(it.id, it);
+    }
+  }
+  const merged = Array.from(map.values()).sort(
+    (a, b) => (b.savedAt || 0) - (a.savedAt || 0)
+  );
+
+  // 4. ローカル更新
+  await setVocab(merged);
+
+  // 5. サーバーへ push（マージ後の全件）
+  const pushRes = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "vocabPush", items: merged }, (r) => resolve(r || {}));
+  });
+  if (pushRes.error) {
+    setSyncStatus(`${t.vocabSyncFailed}: ${pushRes.error}`, "#c97a00");
+    vocabSyncBtn.disabled = false;
+    return;
+  }
+
+  const now = Date.now();
+  await chrome.storage.local.set({ vocabLastSyncAt: now });
+  setSyncStatus(`${t.vocabSyncDone} · ${t.vocabSyncLastAt}: ${fmtSyncTime(now)}`, "#32a852");
+  vocabSyncBtn.disabled = false;
+  renderVocab();
+}
+
+vocabSyncBtn?.addEventListener("click", syncVocabulary);
+
+// 単語帳タブ表示時 / 単語追加時に自動同期（Pro+/BYOK のみ）
+let vocabAutoSyncTimer = null;
+function scheduleAutoSync() {
+  if (!isProPlusOrByok()) return;
+  clearTimeout(vocabAutoSyncTimer);
+  vocabAutoSyncTimer = setTimeout(() => {
+    syncVocabulary().catch(() => {});
+  }, 1500);
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.vocabulary && isProPlusOrByok()) {
+    scheduleAutoSync();
+  }
 });
 
 // CSVエスケープ

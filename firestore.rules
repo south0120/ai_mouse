@@ -46,6 +46,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 単語帳（クラウド同期：本人のみ、Cloud Functions経由でのみ書き込み）
+    match /vocabulary/{document=**} {
+      allow read: if resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
     // その他すべて拒否
     match /{document=**} {
       allow read, write: if false;

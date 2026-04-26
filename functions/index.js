@@ -985,3 +985,129 @@ exports.validateBYOKKey = onRequest(
     }
   }
 );
+
+// ====== 単語帳クラウド同期（Pro+ / BYOK 限定） ======
+const SYNC_ELIGIBLE_PLANS = ["pro_plus", "byok"];
+const VOCAB_MAX_ITEMS = 5000;
+
+async function ensureSyncEligible(uid) {
+  const plan = await getUserPlan(uid);
+  if (!SYNC_ELIGIBLE_PLANS.includes(plan)) {
+    const e = new Error("クラウド同期は Pro+ または BYOK プランのみ利用できます");
+    e.code = 403;
+    throw e;
+  }
+  return plan;
+}
+
+// 単語帳: 取得（pull）
+exports.getVocabulary = onRequest(
+  { cors: true, region: "asia-northeast1" },
+  async (req, res) => {
+    if (req.method !== "GET") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+    const user = await verifyAuth(req);
+    if (!user) return res.status(401).json({ error: "認証が必要です" });
+
+    try {
+      await ensureSyncEligible(user.uid);
+      const snap = await db
+        .collection("vocabulary")
+        .where("uid", "==", user.uid)
+        .orderBy("savedAt", "desc")
+        .limit(VOCAB_MAX_ITEMS)
+        .get();
+
+      const items = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: data.clientId || d.id,
+          headword: data.headword,
+          pos: data.pos || "",
+          definition: data.definition || "",
+          example: data.example || "",
+          outputLang: data.outputLang || "",
+          sourceInput: data.sourceInput || "",
+          savedAt: data.savedAt?.toMillis ? data.savedAt.toMillis() : data.savedAt,
+        };
+      });
+
+      res.json({ items, count: items.length });
+    } catch (e) {
+      const code = e.code === 403 ? 403 : 500;
+      res.status(code).json({ error: e.message || "単語帳取得に失敗しました" });
+    }
+  }
+);
+
+// 単語帳: 一括上書き（push）
+exports.syncVocabulary = onRequest(
+  { cors: true, region: "asia-northeast1" },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+    const user = await verifyAuth(req);
+    if (!user) return res.status(401).json({ error: "認証が必要です" });
+
+    try {
+      await ensureSyncEligible(user.uid);
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      if (items.length > VOCAB_MAX_ITEMS) {
+        return res.status(400).json({ error: `単語帳は最大${VOCAB_MAX_ITEMS}件までです` });
+      }
+
+      // 既存をすべて削除して上書き（last-write-wins、シンプル方式）
+      const existing = await db
+        .collection("vocabulary")
+        .where("uid", "==", user.uid)
+        .get();
+
+      // バッチを500件ずつ分割
+      let batch = db.batch();
+      let opCount = 0;
+      const flush = async () => {
+        if (opCount > 0) {
+          await batch.commit();
+          batch = db.batch();
+          opCount = 0;
+        }
+      };
+
+      for (const doc of existing.docs) {
+        batch.delete(doc.ref);
+        opCount++;
+        if (opCount >= 450) await flush();
+      }
+
+      for (const it of items) {
+        if (!it || !it.headword) continue;
+        const docRef = db.collection("vocabulary").doc();
+        batch.set(docRef, {
+          uid: user.uid,
+          clientId: it.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          headword: String(it.headword).slice(0, 200),
+          pos: String(it.pos || "").slice(0, 100),
+          definition: String(it.definition || "").slice(0, 2000),
+          example: String(it.example || "").slice(0, 1000),
+          outputLang: String(it.outputLang || "").slice(0, 8),
+          sourceInput: String(it.sourceInput || "").slice(0, 1000),
+          savedAt: it.savedAt
+            ? new Date(typeof it.savedAt === "number" ? it.savedAt : Date.parse(it.savedAt))
+            : new Date(),
+          updatedAt: new Date(),
+        });
+        opCount++;
+        if (opCount >= 450) await flush();
+      }
+      await flush();
+
+      res.json({ success: true, count: items.length });
+    } catch (e) {
+      const code = e.code === 403 ? 403 : 500;
+      console.error("syncVocabulary error:", e);
+      res.status(code).json({ error: e.message || "同期に失敗しました" });
+    }
+  }
+);

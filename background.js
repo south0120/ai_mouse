@@ -870,6 +870,51 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "vocabPull") {
+    (async () => {
+      try {
+        const idToken = await getFirebaseIdToken();
+        const r = await fetch(`${API_BASE}/getVocabulary`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          sendResponse({ error: data.error || `pull error ${r.status}` });
+          return;
+        }
+        sendResponse({ success: true, items: data.items || [] });
+      } catch (e) {
+        sendResponse({ error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "vocabPush") {
+    (async () => {
+      try {
+        const idToken = await getFirebaseIdToken();
+        const r = await fetch(`${API_BASE}/syncVocabulary`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ items: msg.items || [] }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          sendResponse({ error: data.error || `push error ${r.status}` });
+          return;
+        }
+        sendResponse({ success: true, count: data.count });
+      } catch (e) {
+        sendResponse({ error: e.message });
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === "openPlanModal") {
     // sidepanel側に「プラン選択を開く」要求を保存
     chrome.storage.local.set({ openPlanModalAt: Date.now() });

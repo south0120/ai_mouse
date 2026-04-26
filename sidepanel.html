@@ -298,11 +298,13 @@
         <button id="vocabUpgradeBtn" class="save-settings-btn" style="background:#4a90d9;" data-i18n="vocabUpgradeBtn">プランをアップグレード</button>
       </div>
       <div id="vocabUnlockedState">
-        <div style="display:flex; gap:8px; padding:8px 12px; border-bottom:1px solid #eee; background:#fafafa;">
-          <input id="vocabSearch" type="text" placeholder="検索…" style="flex:1; padding:6px 10px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+        <div style="display:flex; gap:8px; padding:8px 12px; border-bottom:1px solid #eee; background:#fafafa; flex-wrap:wrap;">
+          <input id="vocabSearch" type="text" placeholder="検索…" style="flex:1; min-width:120px; padding:6px 10px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+          <button id="vocabSyncBtn" class="save-settings-btn" style="background:#32a852; padding:6px 10px; font-size:12px; flex:0 0 auto; width:auto;" data-i18n="vocabSync" title="" data-i18n-title="vocabSyncTooltip">同期</button>
           <button id="vocabExportCsvBtn" class="save-settings-btn" style="background:#4a90d9; padding:6px 10px; font-size:12px; flex:0 0 auto; width:auto;" data-i18n="exportCsv">CSV</button>
           <button id="vocabExportAnkiBtn" class="save-settings-btn" style="background:#666; padding:6px 10px; font-size:12px; flex:0 0 auto; width:auto;" data-i18n="exportAnki">Anki</button>
         </div>
+        <div id="vocabSyncStatus" style="font-size:11px; color:#888; padding:4px 12px; background:#fafafa; border-bottom:1px solid #eee;"></div>
         <ul class="history-list" id="vocabList"></ul>
         <div class="empty-state hidden" id="vocabEmptyState" data-i18n="vocabEmpty">まだ単語帳に追加された語がありません。検索結果から「単語帳へ」をタップしてください</div>
       </div>
